@@ -1,27 +1,27 @@
 #ifndef MAIN_H
 #define MAIN_H
 
+#include <arpa/inet.h>
+#include <assert.h>
+#include <errno.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <poll.h>
+#include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <errno.h>
-#include <poll.h>
 #include <string.h>
-#include <sys/types.h>
 #include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <time.h>
-#include <pthread.h>
+#include <sys/types.h>
 #include <sys/wait.h>
-#include <signal.h>
-#include <netdb.h>
-#include <assert.h>
+#include <time.h>
+#include <unistd.h>
 
 #define GAMES 2
 #define PORT 1025
-#define MAXDATASIZE 256 // Буфер приема
-#define BACKLOG games * 2 //максимальная длина очереди
+#define MAXDATASIZE 256
+#define BACKLOG games * 2 
 #define WINCOORD 8
 #define CONN_FALSE 0
 #define CONN_TRUE 1
@@ -37,17 +37,17 @@ typedef enum type_packet {
   CONN_NEW = 4,
   CONN_EST = 5
 } type_packet_t;
-//TODO: Packet ID?
+// TODO: Packet ID?
 typedef struct packet {
   enum type_packet type;
   char buffer[MAXDATASIZE];
 } packet_t;
 
-packet_t make_packet(type_packet_t type, char* buff);
+packet_t make_packet(type_packet_t type, char *buff);
 int send_packet(packet_t p);
-int get_packet(packet_t* p);
+int get_packet(packet_t *p);
 int check_connection();
 int wait_ack();
-int send_ack ();
+int send_ack();
 
 #endif

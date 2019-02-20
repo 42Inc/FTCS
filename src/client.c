@@ -1,19 +1,18 @@
 #include "./../include/main.h"
 
-extern int client_socket_read;
-extern int client_socket_write;
 int game_state = !GAME_IN_PROG;
 int reconnect = TRUE;
 int diesconnect = FALSE;
+char hostname[256] = "localhost";
+int port = PORT; /* PORT*/
+extern int client_socket_read;
+extern int client_socket_write;
 extern int state_connection;
 extern packet_t reader_buffer[];
 extern packet_t writer_buffer[];
 extern int reader_buffer_len;
 extern int writer_buffer_len;
-char hostname[256] = "localhost";
-int port = PORT; /* PORT*/
 struct hostent *hostIP;
-
 extern pthread_mutex_t connection_mutex;
 extern pthread_mutex_t reader_mutex;
 extern pthread_mutex_t writer_mutex;
@@ -21,10 +20,10 @@ extern pthread_mutex_t helper_mutex;
 
 int reconnection();
 
-int client_tcp_connect(struct hostent* ip, int port) {
+int client_tcp_connect(struct hostent *ip, int port) {
   int sock;
   struct sockaddr_in client;
-  sock = socket(AF_INET , SOCK_STREAM , IPPROTO_TCP);
+  sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   if (sock == -1) {
     fprintf(stderr, "Could not create socket\n");
     exit(EXIT_FAILURE);
@@ -35,45 +34,49 @@ int client_tcp_connect(struct hostent* ip, int port) {
   client.sin_family = AF_INET;
   client.sin_port = htons(port);
 
-  if (connect(sock, (struct sockaddr *)&client , sizeof(client)) < 0) {
+  if (connect(sock, (struct sockaddr *)&client, sizeof(client)) < 0) {
     return -1;
   }
 
   return sock;
 }
 
-void* client_reader() {
+void *client_reader() {
   int recv_result;
   printf("Start Reader!\n");
-  client_reader_start:
+client_reader_start:
   recv_result = 0;
   while (1) {
-    //connection mutex + poll
-//    pthread_mutex_lock(&reader_mutex);
-//    pthread_mutex_lock(&connection_mutex);
-    recv_result = recv(client_socket_read, &reader_buffer[reader_buffer_len], sizeof(reader_buffer[reader_buffer_len]), 0);
-//    pthread_mutex_unlock(&connection_mutex);
+    // connection mutex + poll
+    //    pthread_mutex_lock(&reader_mutex);
+    //    pthread_mutex_lock(&connection_mutex);
+    recv_result = recv(client_socket_read, &reader_buffer[reader_buffer_len],
+                       sizeof(reader_buffer[reader_buffer_len]), 0);
+    //    pthread_mutex_unlock(&connection_mutex);
     printf("Receive %d\n", recv_result);
     if (reader_buffer_len < MAXDATASIZE - 1)
       reader_buffer_len++;
-//    pthread_mutex_unlock(&reader_mutex);
+    //    pthread_mutex_unlock(&reader_mutex);
   }
 }
 
-void* client_writer() {
+void *client_writer() {
   int send_result;
   int trying_send;
   printf("Start Writer!\n");
-  client_writer_start:
+client_writer_start:
   send_result = 0;
   trying_send = 0;
   while (1) {
-    while(!check_connection());
+    while (!check_connection())
+      ;
     pthread_mutex_lock(&writer_mutex);
     if (writer_buffer_len > 0) {
-      //connection mutex
+      // connection mutex
       pthread_mutex_lock(&connection_mutex);
-      send_result = send(client_socket_write, &writer_buffer[writer_buffer_len - 1], sizeof(writer_buffer[writer_buffer_len - 1]), 0);
+      send_result =
+          send(client_socket_write, &writer_buffer[writer_buffer_len - 1],
+               sizeof(writer_buffer[writer_buffer_len - 1]), 0);
       pthread_mutex_unlock(&connection_mutex);
       if (wait_ack()) {
         --writer_buffer_len;
@@ -84,7 +87,7 @@ void* client_writer() {
         printf("Ack is not receive. Resending! %d \n", trying_send);
       }
       if (trying_send >= 10) {
-        //connection mutex
+        // connection mutex
         pthread_mutex_lock(&connection_mutex);
         state_connection = FALSE;
         pthread_mutex_unlock(&connection_mutex);
@@ -96,10 +99,10 @@ void* client_writer() {
   }
 }
 
-void read_socket_from_file(FILE* in_descriptor, char* hostname, int* port) {
+void read_socket_from_file(FILE *in_descriptor, char *hostname, int *port) {
   char buffer[256] = {0};
   int index = 0;
-  fscanf(in_descriptor,"%s", buffer);
+  fscanf(in_descriptor, "%s", buffer);
   while (buffer[index] != ':') {
     index++;
   }
@@ -108,11 +111,10 @@ void read_socket_from_file(FILE* in_descriptor, char* hostname, int* port) {
   strcpy(hostname, buffer);
 }
 
-int main(int argc, char** argv)
-{
+int main(int argc, char **argv) {
   int server_counts = 0;
   int index = 0;
-  FILE* in_descriptor = NULL;
+  FILE *in_descriptor = NULL;
   pthread_t reader_tid = -1;
   pthread_t writer_tid = -1;
   pthread_attr_t reader_attr;
@@ -122,23 +124,23 @@ int main(int argc, char** argv)
       ++index;
       if (in_descriptor == NULL) {
         in_descriptor = fopen("ippool.dat", "r");
-        fscanf(in_descriptor,"%d", &server_counts);
+        fscanf(in_descriptor, "%d", &server_counts);
       }
 
       read_socket_from_file(in_descriptor, hostname, &port);
-      printf("Connecting to %s:%d\n",hostname, port);
+      printf("Connecting to %s:%d\n", hostname, port);
       if ((gethostname(hostname, sizeof(hostname))) == 0) {
         hostIP = gethostbyname(hostname);
       } else {
         fprintf(stderr, "ERROR: - IP Address not found.");
         exit(EXIT_FAILURE);
       }
-      //connection mutex
+      // connection mutex
       client_socket_write = client_tcp_connect(hostIP, port);
       client_socket_read = client_tcp_connect(hostIP, port + 1);
       if (client_socket_write == -1 || client_socket_read == -1) {
         printf("Connection fail.\n");
-          state_connection = CONN_FALSE;
+        state_connection = CONN_FALSE;
         if (server_counts == index) {
           printf("All servers unreacheble!\n");
           break;
@@ -148,28 +150,28 @@ int main(int argc, char** argv)
       }
     }
     if (check_connection()) {
-      //reader & writer thread start
-      if (reader_tid == -1 && writer_tid == -1){
+      // reader & writer thread start
+      if (reader_tid == -1 && writer_tid == -1) {
         pthread_attr_init(&reader_attr);
         pthread_attr_init(&writer_attr);
         pthread_create(&reader_tid, &reader_attr, client_reader, NULL);
         pthread_create(&writer_tid, &writer_attr, client_writer, NULL);
       }
-      //make hello packet
+      // make hello packet
       send_packet(make_packet(CONN_NEW, NULL));
-      printf ("Start\n");
+      printf("Start\n");
       while (check_connection()) {
-//        if (game_state != GAME_IN_PROG)
+        //        if (game_state != GAME_IN_PROG)
         send_packet(make_packet(SERVICE, NULL));
         sleep(5);
         game_state = GAME_IN_PROG;
-        //process
+        // process
         //Здесь должен быть курсач
       }
 
       if (game_state) {
         index = 0;
-        //connection mutex
+        // connection mutex
         pthread_mutex_lock(&connection_mutex);
         state_connection = CONN_FALSE;
         pthread_mutex_unlock(&connection_mutex);
@@ -180,7 +182,7 @@ int main(int argc, char** argv)
         client_socket_read = -1;
         if (in_descriptor != NULL)
           fclose(in_descriptor);
-        //connection mutex
+        // connection mutex
         pthread_mutex_lock(&connection_mutex);
         state_connection = reconnection();
         pthread_mutex_unlock(&connection_mutex);
@@ -202,7 +204,7 @@ int reconnection() {
   int trying_reconnect = 0;
 
   while (trying_reconnect++ < 50) {
-    //mutex
+    // mutex
     client_socket_write = client_tcp_connect(hostIP, port);
     client_socket_read = client_tcp_connect(hostIP, port + 1);
     if (client_socket_write != -1 && client_socket_read != -1) {

@@ -12,10 +12,10 @@ pthread_mutex_t helper_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 int client_socket_read = -1;
 int client_socket_write = -1;
-packet_t make_packet(type_packet_t type, char* buff) {
+packet_t make_packet(type_packet_t type, char *buff) {
   packet_t p;
   p.type = type;
-  if (buff != NULL){
+  if (buff != NULL) {
     strcpy(p.buffer, buff);
   } else {
     p.buffer[0] = '\0';
@@ -23,7 +23,7 @@ packet_t make_packet(type_packet_t type, char* buff) {
   return p;
 }
 
-int  send_ack () {
+int send_ack() {
   packet_t p = make_packet(CONN_ACK, NULL);
   pthread_mutex_lock(&connection_mutex);
   send(client_socket_write, &p, sizeof(p), 0);
@@ -32,12 +32,12 @@ int  send_ack () {
   return TRUE;
 }
 
-int wait_ack () {
+int wait_ack() {
   int duration = 1000000;
   while (duration--) {
-    //connection mutex
+    // connection mutex
     pthread_mutex_lock(&reader_mutex);
-    if (reader_buffer[reader_buffer_len].type == CONN_ACK){
+    if (reader_buffer[reader_buffer_len].type == CONN_ACK) {
       pthread_mutex_unlock(&reader_mutex);
       printf("Receive ack\n");
       return TRUE;
@@ -48,9 +48,9 @@ int wait_ack () {
 }
 
 int send_packet(packet_t p) {
-  //connection mutex
+  // connection mutex
   pthread_mutex_lock(&writer_mutex);
-  if (writer_buffer_len == MAXDATASIZE - 1){
+  if (writer_buffer_len == MAXDATASIZE - 1) {
     pthread_mutex_unlock(&writer_mutex);
     return FALSE;
   }
@@ -59,13 +59,11 @@ int send_packet(packet_t p) {
   return TRUE;
 }
 
-int get_packet(packet_t* p) {
-  //connection mutex
+int get_packet(packet_t *p) {
+  // connection mutex
   pthread_mutex_lock(&reader_mutex);
   pthread_mutex_unlock(&reader_mutex);
   return FALSE;
 }
 
-int check_connection() {
-  return state_connection;
-}
+int check_connection() { return state_connection; }
