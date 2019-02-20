@@ -48,5 +48,6 @@ int send_packet(packet_t p);
 int get_packet(packet_t* p);
 int check_connection();
 int wait_ack();
+int send_ack ();
 
 #endif

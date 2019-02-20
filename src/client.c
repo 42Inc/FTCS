@@ -54,7 +54,8 @@ void* client_reader() {
     recv_result = recv(client_socket_read, &reader_buffer[reader_buffer_len], sizeof(reader_buffer[reader_buffer_len]), 0);
 //    pthread_mutex_unlock(&connection_mutex);
     printf("Receive %d\n", recv_result);
-    reader_buffer_len++;
+    if (reader_buffer_len < MAXDATASIZE - 1)
+      reader_buffer_len++;
 //    pthread_mutex_unlock(&reader_mutex);
   }
 }
@@ -159,7 +160,8 @@ int main(int argc, char** argv)
       printf ("Start\n");
       while (check_connection()) {
 //        if (game_state != GAME_IN_PROG)
-//        send_packet(make_packet(CONN_NEW, NULL));
+        send_packet(make_packet(SERVICE, NULL));
+        sleep(5);
         game_state = GAME_IN_PROG;
         //process
         //Здесь должен быть курсач
@@ -199,7 +201,7 @@ int main(int argc, char** argv)
 int reconnection() {
   int trying_reconnect = 0;
 
-  while (trying_reconnect < 50) {
+  while (trying_reconnect++ < 50) {
     //mutex
     client_socket_write = client_tcp_connect(hostIP, port);
     client_socket_read = client_tcp_connect(hostIP, port + 1);

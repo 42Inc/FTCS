@@ -31,7 +31,8 @@ void* server_reader() {
 //    pthread_mutex_unlock(&connection_mutex);
     printf("Receive %d\n", recv_result);
     send_ack();
-    reader_buffer_len++;
+    if (reader_buffer_len < MAXDATASIZE - 1)
+      reader_buffer_len++;
 //    pthread_mutex_unlock(&reader_mutex);
   }
 }

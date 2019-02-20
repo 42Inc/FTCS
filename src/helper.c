@@ -23,12 +23,13 @@ packet_t make_packet(type_packet_t type, char* buff) {
   return p;
 }
 
-void send_ack () {
+int  send_ack () {
   packet_t p = make_packet(CONN_ACK, NULL);
   pthread_mutex_lock(&connection_mutex);
   send(client_socket_write, &p, sizeof(p), 0);
   printf("Send ack\n");
   pthread_mutex_unlock(&connection_mutex);
+  return TRUE;
 }
 
 int wait_ack () {
