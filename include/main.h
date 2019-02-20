@@ -21,7 +21,7 @@
 #define GAMES 2
 #define PORT 1025
 #define MAXDATASIZE 256
-#define BACKLOG games * 2 
+#define BACKLOG games * 2
 #define WINCOORD 8
 #define CONN_FALSE 0
 #define CONN_TRUE 1
@@ -43,9 +43,9 @@ typedef struct packet {
   char buffer[MAXDATASIZE];
 } packet_t;
 
-packet_t make_packet(type_packet_t type, char *buff);
+packet_t make_packet(type_packet_t type, char* buff);
 int send_packet(packet_t p);
-int get_packet(packet_t *p);
+int get_packet(packet_t* p);
 int check_connection();
 int wait_ack();
 int send_ack();

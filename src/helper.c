@@ -12,7 +12,7 @@ pthread_mutex_t helper_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 int client_socket_read = -1;
 int client_socket_write = -1;
-packet_t make_packet(type_packet_t type, char *buff) {
+packet_t make_packet(type_packet_t type, char* buff) {
   packet_t p;
   p.type = type;
   if (buff != NULL) {
@@ -59,11 +59,13 @@ int send_packet(packet_t p) {
   return TRUE;
 }
 
-int get_packet(packet_t *p) {
+int get_packet(packet_t* p) {
   // connection mutex
   pthread_mutex_lock(&reader_mutex);
   pthread_mutex_unlock(&reader_mutex);
   return FALSE;
 }
 
-int check_connection() { return state_connection; }
+int check_connection() {
+  return state_connection;
+}

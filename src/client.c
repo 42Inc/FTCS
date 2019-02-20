@@ -12,7 +12,7 @@ extern packet_t reader_buffer[];
 extern packet_t writer_buffer[];
 extern int reader_buffer_len;
 extern int writer_buffer_len;
-struct hostent *hostIP;
+struct hostent* hostIP;
 extern pthread_mutex_t connection_mutex;
 extern pthread_mutex_t reader_mutex;
 extern pthread_mutex_t writer_mutex;
@@ -20,7 +20,7 @@ extern pthread_mutex_t helper_mutex;
 
 int reconnection();
 
-int client_tcp_connect(struct hostent *ip, int port) {
+int client_tcp_connect(struct hostent* ip, int port) {
   int sock;
   struct sockaddr_in client;
   sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -30,18 +30,18 @@ int client_tcp_connect(struct hostent *ip, int port) {
   }
 
   memset(&client, 0, sizeof(client));
-  client.sin_addr = *((struct in_addr *)ip->h_addr);
+  client.sin_addr = *((struct in_addr*)ip->h_addr);
   client.sin_family = AF_INET;
   client.sin_port = htons(port);
 
-  if (connect(sock, (struct sockaddr *)&client, sizeof(client)) < 0) {
+  if (connect(sock, (struct sockaddr*)&client, sizeof(client)) < 0) {
     return -1;
   }
 
   return sock;
 }
 
-void *client_reader() {
+void* client_reader() {
   int recv_result;
   printf("Start Reader!\n");
 client_reader_start:
@@ -50,8 +50,11 @@ client_reader_start:
     // connection mutex + poll
     //    pthread_mutex_lock(&reader_mutex);
     //    pthread_mutex_lock(&connection_mutex);
-    recv_result = recv(client_socket_read, &reader_buffer[reader_buffer_len],
-                       sizeof(reader_buffer[reader_buffer_len]), 0);
+    recv_result =
+            recv(client_socket_read,
+                 &reader_buffer[reader_buffer_len],
+                 sizeof(reader_buffer[reader_buffer_len]),
+                 0);
     //    pthread_mutex_unlock(&connection_mutex);
     printf("Receive %d\n", recv_result);
     if (reader_buffer_len < MAXDATASIZE - 1)
@@ -60,7 +63,7 @@ client_reader_start:
   }
 }
 
-void *client_writer() {
+void* client_writer() {
   int send_result;
   int trying_send;
   printf("Start Writer!\n");
@@ -75,8 +78,10 @@ client_writer_start:
       // connection mutex
       pthread_mutex_lock(&connection_mutex);
       send_result =
-          send(client_socket_write, &writer_buffer[writer_buffer_len - 1],
-               sizeof(writer_buffer[writer_buffer_len - 1]), 0);
+              send(client_socket_write,
+                   &writer_buffer[writer_buffer_len - 1],
+                   sizeof(writer_buffer[writer_buffer_len - 1]),
+                   0);
       pthread_mutex_unlock(&connection_mutex);
       if (wait_ack()) {
         --writer_buffer_len;
@@ -99,7 +104,7 @@ client_writer_start:
   }
 }
 
-void read_socket_from_file(FILE *in_descriptor, char *hostname, int *port) {
+void read_socket_from_file(FILE* in_descriptor, char* hostname, int* port) {
   char buffer[256] = {0};
   int index = 0;
   fscanf(in_descriptor, "%s", buffer);
@@ -111,10 +116,10 @@ void read_socket_from_file(FILE *in_descriptor, char *hostname, int *port) {
   strcpy(hostname, buffer);
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   int server_counts = 0;
   int index = 0;
-  FILE *in_descriptor = NULL;
+  FILE* in_descriptor = NULL;
   pthread_t reader_tid = -1;
   pthread_t writer_tid = -1;
   pthread_attr_t reader_attr;

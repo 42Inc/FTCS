@@ -15,7 +15,11 @@ OBJ_CLIENT := $(OBJ_PATH)/$(CLIENT).o $(OBJ_PATH)/helper.o
 OBJ_SERVER := $(OBJ_PATH)/$(SERVER).o $(OBJ_PATH)/helper.o
 .PHONY: all GRADUATION_PROJECT COMPILE_C clean restruct
 
-all: DIRECTORY GRADUATION_PROJECT
+all: FORMAT DIRECTORY GRADUATION_PROJECT
+FORMAT:
+	clang-format -i $(INC_PATH)/*.h
+	clang-format -i $(SRC_PATH)/*.c
+
 
 DIRECTORY: $(OBJ_PATH) $(BIN_PATH)
 
