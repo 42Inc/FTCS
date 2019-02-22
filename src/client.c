@@ -12,7 +12,7 @@ extern packet_t reader_buffer[];
 extern packet_t writer_buffer[];
 extern int reader_buffer_len;
 extern int writer_buffer_len;
-struct hostent* hostIP;
+struct hostent *hostIP;
 extern pthread_mutex_t connection_mutex;
 extern pthread_mutex_t reader_mutex;
 extern pthread_mutex_t writer_mutex;
@@ -20,7 +20,7 @@ extern pthread_mutex_t helper_mutex;
 
 int reconnection();
 
-int client_tcp_connect(struct hostent* ip, int port) {
+int client_tcp_connect(struct hostent *ip, int port) {
   int sock;
   struct sockaddr_in client;
   sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -30,18 +30,18 @@ int client_tcp_connect(struct hostent* ip, int port) {
   }
 
   memset(&client, 0, sizeof(client));
-  client.sin_addr = *((struct in_addr*)ip->h_addr);
+  client.sin_addr = *((struct in_addr *)ip->h_addr);
   client.sin_family = AF_INET;
   client.sin_port = htons(port);
 
-  if (connect(sock, (struct sockaddr*)&client, sizeof(client)) < 0) {
+  if (connect(sock, (struct sockaddr *)&client, sizeof(client)) < 0) {
     return -1;
   }
 
   return sock;
 }
 
-void* client_reader() {
+void *client_reader() {
   int recv_result;
   printf("Start Reader!\n");
 client_reader_start:
@@ -63,7 +63,7 @@ client_reader_start:
   }
 }
 
-void* client_writer() {
+void *client_writer() {
   int send_result;
   int trying_send;
   printf("Start Writer!\n");
@@ -83,7 +83,7 @@ client_writer_start:
                    sizeof(writer_buffer[writer_buffer_len - 1]),
                    0);
       pthread_mutex_unlock(&connection_mutex);
-      if (wait_ack()) {
+      if (wait_ack(0) || writer_buffer[writer_buffer_len].type == CONN_ACK) {
         --writer_buffer_len;
         trying_send = 0;
         printf("Send with: %d\n", send_result);
@@ -104,22 +104,20 @@ client_writer_start:
   }
 }
 
-void read_socket_from_file(FILE* in_descriptor, char* hostname, int* port) {
+void read_socket_from_file(FILE *in_descriptor, char *hostname, int *port) {
   char buffer[256] = {0};
   int index = 0;
   fscanf(in_descriptor, "%s", buffer);
-  while (buffer[index] != ':') {
-    index++;
-  }
+  while (buffer[index] != ':') { index++; }
   buffer[index] = '\0';
   *port = atoi(&buffer[index + 1]);
   strcpy(hostname, buffer);
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   int server_counts = 0;
   int index = 0;
-  FILE* in_descriptor = NULL;
+  FILE *in_descriptor = NULL;
   pthread_t reader_tid = -1;
   pthread_t writer_tid = -1;
   pthread_attr_t reader_attr;

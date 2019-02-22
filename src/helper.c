@@ -12,7 +12,7 @@ pthread_mutex_t helper_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 int client_socket_read = -1;
 int client_socket_write = -1;
-packet_t make_packet(type_packet_t type, char* buff) {
+packet_t make_packet(type_packet_t type, char *buff) {
   packet_t p;
   p.type = type;
   if (buff != NULL) {
@@ -23,7 +23,7 @@ packet_t make_packet(type_packet_t type, char* buff) {
   return p;
 }
 
-int send_ack() {
+int send_ack(int packet_id) {
   packet_t p = make_packet(CONN_ACK, NULL);
   pthread_mutex_lock(&connection_mutex);
   send(client_socket_write, &p, sizeof(p), 0);
@@ -32,7 +32,7 @@ int send_ack() {
   return TRUE;
 }
 
-int wait_ack() {
+int wait_ack(int packet_id) {
   int duration = 1000000;
   while (duration--) {
     // connection mutex
@@ -59,7 +59,7 @@ int send_packet(packet_t p) {
   return TRUE;
 }
 
-int get_packet(packet_t* p) {
+int get_packet(packet_t *p) {
   // connection mutex
   pthread_mutex_lock(&reader_mutex);
   pthread_mutex_unlock(&reader_mutex);

@@ -17,7 +17,7 @@ extern pthread_mutex_t reader_mutex;
 extern pthread_mutex_t writer_mutex;
 extern pthread_mutex_t helper_mutex;
 
-void* server_reader() {
+void *server_reader() {
   int recv_result;
   printf("Start Reader!\n");
 server_reader_start:
@@ -33,14 +33,14 @@ server_reader_start:
                  0);
     //    pthread_mutex_unlock(&connection_mutex);
     printf("Receive %d\n", recv_result);
-    send_ack();
+    send_ack(0);
     if (reader_buffer_len < MAXDATASIZE - 1)
       reader_buffer_len++;
     //    pthread_mutex_unlock(&reader_mutex);
   }
 }
 
-void* server_writer() {
+void *server_writer() {
   int send_result;
   int trying_send;
   printf("Start Writer!\n");
@@ -60,7 +60,7 @@ server_writer_start:
                    sizeof(writer_buffer[writer_buffer_len]),
                    0);
       pthread_mutex_unlock(&connection_mutex);
-      if (wait_ack()) {
+      if (wait_ack(0) || writer_buffer[writer_buffer_len].type == CONN_ACK) {
         --writer_buffer_len;
         trying_send = 0;
         printf("Send with: %d\n", send_result);
@@ -93,7 +93,7 @@ int create_server_tcp_socket(unsigned int ip, int port) {
   server.sin_addr.s_addr = ip;
   server.sin_port = htons(port);
 
-  if (bind(sock, (struct sockaddr*)&server, sizeof(server)) < 0) {
+  if (bind(sock, (struct sockaddr *)&server, sizeof(server)) < 0) {
     fprintf(stderr, "Bind failed\n");
     exit(EXIT_FAILURE);
   }
@@ -111,7 +111,7 @@ int accept_tcp_connection(int server_socket) {
   struct sockaddr_in connection_addr;
   unsigned int len = sizeof(connection_addr);
   if ((connection = accept(
-               server_socket, (struct sockaddr*)&connection_addr, &len)) < 0) {
+               server_socket, (struct sockaddr *)&connection_addr, &len)) < 0) {
     fprintf(stderr, "accept failed\n");
     exit(EXIT_FAILURE);
   }
@@ -121,14 +121,14 @@ int accept_tcp_connection(int server_socket) {
   return connection;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   int port = PORT; // listen port
   int opt;
   int recv_result = 0;
   struct sockaddr_in my_addr;       // host addr
   struct sockaddr_in their_addr[2]; // client
   socklen_t sin_size[2];
-  FILE* in_descriptor = NULL;
+  FILE *in_descriptor = NULL;
   pthread_t reader_tid = -1;
   pthread_t writer_tid = -1;
   pthread_attr_t reader_attr;
