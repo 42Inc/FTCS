@@ -57,6 +57,8 @@ client_reader_start:
                  0);
     //    pthread_mutex_unlock(&connection_mutex);
     printf("Receive %d\n", recv_result);
+    if (reader_buffer[reader_buffer_len].type != CONN_ACK)
+      send_ack(0);
     if (reader_buffer_len < MAXDATASIZE - 1)
       reader_buffer_len++;
     //    pthread_mutex_unlock(&reader_mutex);

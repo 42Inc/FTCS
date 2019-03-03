@@ -25,8 +25,9 @@ packet_t make_packet(type_packet_t type, char *buff) {
 
 int send_ack(int packet_id) {
   packet_t p = make_packet(CONN_ACK, NULL);
+  int send_result = 0;
   pthread_mutex_lock(&connection_mutex);
-  send(client_socket_write, &p, sizeof(p), 0);
+  send_result = send(client_socket_write, &p, sizeof(p), 0);
   printf("Send ack\n");
   pthread_mutex_unlock(&connection_mutex);
   return TRUE;
