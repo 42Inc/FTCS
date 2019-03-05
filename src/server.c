@@ -19,25 +19,37 @@ extern pthread_mutex_t helper_mutex;
 
 void *server_reader() {
   int recv_result;
+  struct pollfd pfd;
+
   printf("Start Reader!\n");
 server_reader_start:
   recv_result = 0;
+  pfd.fd = client_socket_read;
+  pfd.events = POLLIN | POLLHUP | POLLRDNORM;
   while (1) {
+    while (!check_connection())
+      ;
     // connection mutex + poll
     //    pthread_mutex_lock(&reader_mutex);
     //    pthread_mutex_lock(&connection_mutex);
-    recv_result =
-            recv(client_socket_read,
-                 &reader_buffer[reader_buffer_len],
-                 sizeof(reader_buffer[reader_buffer_len]),
-                 0);
-    //    pthread_mutex_unlock(&connection_mutex);
-    printf("Receive %d\n", recv_result);
-    if (reader_buffer[reader_buffer_len].type != CONN_ACK)
-      send_ack(0);
-    if (reader_buffer_len < MAXDATASIZE - 1)
-      reader_buffer_len++;
-    //    pthread_mutex_unlock(&reader_mutex);
+    if (poll(&pfd, 1, 100) > 0) {
+      recv_result =
+              recv(client_socket_read,
+                   &reader_buffer[reader_buffer_len],
+                   sizeof(reader_buffer[reader_buffer_len]),
+                   MSG_DONTWAIT);
+
+      if (recv_result < 0) {
+        // disconnect
+      }
+      //    pthread_mutex_unlock(&connection_mutex);
+      printf("Server Reader : Receive %d\n", recv_result);
+      //  if (reader_buffer[reader_buffer_len].type != CONN_ACK)
+      // send_ack(0);
+      if (reader_buffer_len < MAXDATASIZE - 1)
+        reader_buffer_len++;
+      //    pthread_mutex_unlock(&reader_mutex);
+    }
   }
 }
 

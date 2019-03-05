@@ -43,25 +43,36 @@ int client_tcp_connect(struct hostent *ip, int port) {
 
 void *client_reader() {
   int recv_result;
+  struct pollfd pfd;
+
   printf("Start Reader!\n");
 client_reader_start:
   recv_result = 0;
+  pfd.fd = client_socket_read;
+  pfd.events = POLLIN | POLLHUP | POLLRDNORM;
   while (1) {
+    while (!check_connection());
     // connection mutex + poll
     //    pthread_mutex_lock(&reader_mutex);
     //    pthread_mutex_lock(&connection_mutex);
-    recv_result =
-            recv(client_socket_read,
-                 &reader_buffer[reader_buffer_len],
-                 sizeof(reader_buffer[reader_buffer_len]),
-                 0);
-    //    pthread_mutex_unlock(&connection_mutex);
-    printf("Receive %d\n", recv_result);
-    if (reader_buffer[reader_buffer_len].type != CONN_ACK)
-      send_ack(0);
-    if (reader_buffer_len < MAXDATASIZE - 1)
-      reader_buffer_len++;
-    //    pthread_mutex_unlock(&reader_mutex);
+    if (poll(&pfd, 1, 100) > 0) {
+      recv_result =
+              recv(client_socket_read,
+                   &reader_buffer[reader_buffer_len],
+                   sizeof(reader_buffer[reader_buffer_len]),
+                   MSG_DONTWAIT);
+
+      if (recv_result < 0) {
+        // disconnect
+      }
+      //    pthread_mutex_unlock(&connection_mutex);
+      printf("Client Reader : Receive %d\n", recv_result);
+      if (reader_buffer[reader_buffer_len].type != CONN_ACK)
+        send_ack(0);
+      if (reader_buffer_len < MAXDATASIZE - 1)
+        reader_buffer_len++;
+      //    pthread_mutex_unlock(&reader_mutex);
+    }
   }
 }
 
@@ -88,10 +99,10 @@ client_writer_start:
       if (wait_ack(0) || writer_buffer[writer_buffer_len].type == CONN_ACK) {
         --writer_buffer_len;
         trying_send = 0;
-        printf("Send with: %d\n", send_result);
+        printf("Client Writer : Send with: %d\n", send_result);
       } else {
         ++trying_send;
-        printf("Ack is not receive. Resending! %d \n", trying_send);
+        printf("Client Writer : Ack is not receive. Resending! %d \n", trying_send);
       }
       if (trying_send >= 10) {
         // connection mutex
@@ -99,7 +110,7 @@ client_writer_start:
         state_connection = FALSE;
         pthread_mutex_unlock(&connection_mutex);
         trying_send = 0;
-        printf("Ack is not receive. Connection drop!\n");
+        printf("Client Writer : Ack is not receive. Connection drop!\n");
       }
     }
     pthread_mutex_unlock(&writer_mutex);
@@ -214,6 +225,8 @@ int reconnection() {
     client_socket_read = client_tcp_connect(hostIP, port + 1);
     if (client_socket_write != -1 && client_socket_read != -1) {
       return CONN_TRUE;
+    } else {
+      printf("Reconnect fail!\n");
     }
   }
   return CONN_FALSE;
