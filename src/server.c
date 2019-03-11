@@ -19,44 +19,37 @@ extern pthread_mutex_t helper_mutex;
 
 void *server_reader() {
   int recv_result;
+  int poll_return;
   struct pollfd pfd;
 
-  printf("Start Reader!\n");
+  printf("Start server Reader!\n");
 server_reader_start:
   recv_result = 0;
-  pfd.fd = client_socket_read;
-  pfd.events = POLLIN | POLLHUP | POLLRDNORM;
+  poll_return = 0;
   while (1) {
-    while (!check_connection())
-      ;
-    // connection mutex + poll
-    //    pthread_mutex_lock(&reader_mutex);
-    //    pthread_mutex_lock(&connection_mutex);
-    if (poll(&pfd, 1, 100) > 0) {
-      recv_result =
-              recv(client_socket_read,
-                   &reader_buffer[reader_buffer_len],
-                   sizeof(reader_buffer[reader_buffer_len]),
-                   MSG_DONTWAIT);
+    while (!check_connection());
+//    pthread_mutex_lock(&reader_mutex);
+//    pthread_mutex_lock(&connection_mutex);
+    recv_result =
+            recv(client_socket_read,
+                 &reader_buffer[reader_buffer_len],
+                 sizeof(reader_buffer[reader_buffer_len]),
+                 0);
+//    pthread_mutex_unlock(&connection_mutex);
+    printf("Client server Reader : Receive %d\n", recv_result);
+    if (reader_buffer[reader_buffer_len].type != CONN_ACK)
+      send_ack(0);
+    if (reader_buffer_len < MAXDATASIZE - 1)
+      reader_buffer_len++;
 
-      if (recv_result < 0) {
-        // disconnect
-      }
-      //    pthread_mutex_unlock(&connection_mutex);
-      printf("Server Reader : Receive %d\n", recv_result);
-      //  if (reader_buffer[reader_buffer_len].type != CONN_ACK)
-      // send_ack(0);
-      if (reader_buffer_len < MAXDATASIZE - 1)
-        reader_buffer_len++;
-      //    pthread_mutex_unlock(&reader_mutex);
-    }
+//    pthread_mutex_unlock(&reader_mutex);
   }
 }
 
 void *server_writer() {
   int send_result;
   int trying_send;
-  printf("Start Writer!\n");
+  printf("Start server Writer!\n");
 server_writer_start:
   send_result = 0;
   trying_send = 0;
@@ -73,7 +66,7 @@ server_writer_start:
                    sizeof(writer_buffer[writer_buffer_len]),
                    0);
       pthread_mutex_unlock(&connection_mutex);
-      if (wait_ack(0) || writer_buffer[writer_buffer_len].type == CONN_ACK) {
+      if (writer_buffer[writer_buffer_len].type == CONN_ACK || wait_ack(0)) {
         --writer_buffer_len;
         trying_send = 0;
         printf("Send with: %d\n", send_result);
@@ -179,8 +172,10 @@ int main(int argc, char **argv) {
       pthread_attr_init(&writer_attr);
       pthread_create(&reader_tid, &reader_attr, server_reader, NULL);
       pthread_create(&writer_tid, &writer_attr, server_writer, NULL);
-      while (1)
+      while (check_connection())
         ;
+
+      printf("Disconnect\n");
       close(client_socket_read);
       close(client_socket_write);
       if (writer_tid != -1)

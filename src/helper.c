@@ -28,13 +28,14 @@ int send_ack(int packet_id) {
   int send_result = 0;
   pthread_mutex_lock(&connection_mutex);
   send_result = send(client_socket_write, &p, sizeof(p), 0);
-  printf("Send ack\n");
   pthread_mutex_unlock(&connection_mutex);
+  printf("Send ack\n");
   return TRUE;
 }
 
 int wait_ack(int packet_id) {
   int duration = 1000000;
+  printf("Wait ack\n");
   while (duration--) {
     // connection mutex
     pthread_mutex_lock(&reader_mutex);
