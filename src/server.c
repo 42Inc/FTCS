@@ -31,11 +31,11 @@ server_reader_start:
   while (1) {
     while (!check_connection())
       ;
-    pthread_mutex_lock(&reader_mutex);
     pthread_mutex_lock(&connection_mutex);
     pfd.fd = client_socket_read;
     pthread_mutex_unlock(&connection_mutex);
     if ((poll_return = poll(&pfd, 1, 100)) > 0) {
+      pthread_mutex_lock(&reader_mutex);
       pthread_mutex_lock(&connection_mutex);
       recv_result =
               recv(client_socket_read,
@@ -50,13 +50,13 @@ server_reader_start:
         state_connection = CONN_FALSE;
         pthread_mutex_unlock(&connection_mutex);
       }
-      printf("Client server Reader : Receive %d\n", recv_result);
+      printf("Server Reader : Receive %d\n", recv_result);
       if (reader_buffer[reader_buffer_len].type != CONN_ACK)
         send_ack(0);
       if (reader_buffer_len < MAXDATASIZE - 1)
         reader_buffer_len++;
+      pthread_mutex_unlock(&reader_mutex);
     }
-    pthread_mutex_unlock(&reader_mutex);
   }
 }
 

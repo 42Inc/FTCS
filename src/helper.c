@@ -34,7 +34,7 @@ int send_ack(int packet_id) {
 }
 
 int wait_ack(int packet_id) {
-  int duration = 1000000;
+  long int duration = 100000000;
   printf("Wait ack\n");
   while (duration--) {
     // connection mutex
