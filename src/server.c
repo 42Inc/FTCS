@@ -26,23 +26,37 @@ void *server_reader() {
 server_reader_start:
   recv_result = 0;
   poll_return = 0;
+  pfd.fd = client_socket_read;
+  pfd.events = POLLIN | POLLHUP | POLLRDNORM;
   while (1) {
-    while (!check_connection());
-//    pthread_mutex_lock(&reader_mutex);
-//    pthread_mutex_lock(&connection_mutex);
-    recv_result =
-            recv(client_socket_read,
-                 &reader_buffer[reader_buffer_len],
-                 sizeof(reader_buffer[reader_buffer_len]),
-                 0);
-//    pthread_mutex_unlock(&connection_mutex);
-    printf("Client server Reader : Receive %d\n", recv_result);
-    if (reader_buffer[reader_buffer_len].type != CONN_ACK)
-      send_ack(0);
-    if (reader_buffer_len < MAXDATASIZE - 1)
-      reader_buffer_len++;
+    while (!check_connection())
+      ;
+    pthread_mutex_lock(&reader_mutex);
+    pthread_mutex_lock(&connection_mutex);
+    pfd.fd = client_socket_read;
+    pthread_mutex_unlock(&connection_mutex);
+    if ((poll_return = poll(&pfd, 1, 100)) > 0) {
+      pthread_mutex_lock(&connection_mutex);
+      recv_result =
+              recv(client_socket_read,
+                   &reader_buffer[reader_buffer_len],
+                   sizeof(reader_buffer[reader_buffer_len]),
+                   0);
+      pthread_mutex_unlock(&connection_mutex);
 
-//    pthread_mutex_unlock(&reader_mutex);
+      if (recv_result <= 0) {
+        printf("WTF?! Poll return: %d\nDisconnect!\n", poll_return);
+        pthread_mutex_lock(&connection_mutex);
+        state_connection = CONN_FALSE;
+        pthread_mutex_unlock(&connection_mutex);
+      }
+      printf("Client server Reader : Receive %d\n", recv_result);
+      if (reader_buffer[reader_buffer_len].type != CONN_ACK)
+        send_ack(0);
+      if (reader_buffer_len < MAXDATASIZE - 1)
+        reader_buffer_len++;
+    }
+    pthread_mutex_unlock(&reader_mutex);
   }
 }
 
