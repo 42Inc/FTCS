@@ -8,10 +8,11 @@ int port = PORT; /* PORT*/
 extern int client_socket_read;
 extern int client_socket_write;
 extern int state_connection;
-extern packet_t reader_buffer[];
-extern packet_t writer_buffer[];
+extern packets_t *reader_buffer;
+extern packets_t *writer_buffer;
 extern int reader_buffer_len;
 extern int writer_buffer_len;
+extern int ack_id;
 struct hostent *hostIP;
 extern pthread_mutex_t connection_mutex;
 extern pthread_mutex_t reader_mutex;
@@ -45,6 +46,7 @@ void *client_reader() {
   int recv_result;
   int poll_return;
   struct pollfd pfd;
+  packet_t p;
 
   printf("Start Reader!\n");
 client_reader_start:
@@ -61,24 +63,28 @@ client_reader_start:
     if ((poll_return = poll(&pfd, 1, 100)) > 0) {
       pthread_mutex_lock(&reader_mutex);
       pthread_mutex_lock(&connection_mutex);
-      recv_result =
-              recv(client_socket_read,
-                   &reader_buffer[reader_buffer_len],
-                   sizeof(reader_buffer[reader_buffer_len]),
-                   0);
+      recv_result = recv(client_socket_read, &p, sizeof(packet_t), 0);
       pthread_mutex_unlock(&connection_mutex);
 
       if (recv_result <= 0) {
-        printf("WTF?! Poll return: %d\nDisconnect!\n", poll_return);
+        printf("WTF?! Poll return: %d vs %d\nDisconnect!\n",
+               poll_return,
+               recv_result);
         pthread_mutex_lock(&connection_mutex);
         state_connection = CONN_FALSE;
         pthread_mutex_unlock(&connection_mutex);
+      } else {
+        push_queue(p, &reader_buffer);
+        printf("Client Reader : Receive %d[%lu].%d\n",
+               recv_result,
+               reader_buffer->len,
+               p.type);
+        if (p.type != CONN_ACK)
+          send_ack(0);
+        else {
+          ack_id = 0;
+        }
       }
-      printf("Client Reader : Receive %d\n", recv_result);
-      if (reader_buffer[reader_buffer_len].type != CONN_ACK)
-        send_ack(0);
-      if (reader_buffer_len < MAXDATASIZE - 1)
-        reader_buffer_len++;
       pthread_mutex_unlock(&reader_mutex);
     }
   }
@@ -87,6 +93,7 @@ client_reader_start:
 void *client_writer() {
   int send_result;
   int trying_send;
+  packet_t p;
   printf("Start Writer!\n");
 client_writer_start:
   send_result = 0;
@@ -95,31 +102,32 @@ client_writer_start:
     while (!check_connection())
       ;
     pthread_mutex_lock(&writer_mutex);
-    if (writer_buffer_len > 0) {
+    if (writer_buffer->len > 0) {
       // connection mutex
-      pthread_mutex_lock(&connection_mutex);
-      send_result =
-              send(client_socket_write,
-                   &writer_buffer[writer_buffer_len - 1],
-                   sizeof(writer_buffer[writer_buffer_len - 1]),
-                   0);
-      pthread_mutex_unlock(&connection_mutex);
-      if (writer_buffer[writer_buffer_len].type == CONN_ACK || wait_ack(0)) {
-        --writer_buffer_len;
-        trying_send = 0;
-        printf("Client Writer : Send with: %d\n", send_result);
-      } else {
-        ++trying_send;
-        printf("Client Writer : Ack is not receive. Resending! %d \n",
-               trying_send);
-      }
-      if (trying_send >= 10) {
-        // connection mutex
+      p = pop_queue(&writer_buffer);
+    sending:
+      if (p.type != NONE) {
         pthread_mutex_lock(&connection_mutex);
-        state_connection = FALSE;
+        send_result = send(client_socket_write, &p, sizeof(packet_t), 0);
         pthread_mutex_unlock(&connection_mutex);
-        trying_send = 0;
-        printf("Client Writer : Ack is not receive. Connection drop!\n");
+
+        if (p.type == CONN_ACK || wait_ack(0)) {
+          //        --writer_buffer_len;
+          trying_send = 0;
+          printf("Client Writer : Send with: %d.%d\n", send_result, p.type);
+        } else if (trying_send >= 10) {
+          // connection mutex
+          pthread_mutex_lock(&connection_mutex);
+          state_connection = FALSE;
+          pthread_mutex_unlock(&connection_mutex);
+          trying_send = 0;
+          printf("Client Writer : Ack is not receive. Connection drop!\n");
+        } else {
+          ++trying_send;
+          printf("Client Writer : Ack is not receive. Resending! %d \n",
+                 trying_send);
+          goto sending;
+        }
       }
     }
     pthread_mutex_unlock(&writer_mutex);
@@ -144,12 +152,18 @@ int main(int argc, char **argv) {
   pthread_t writer_tid = -1;
   pthread_attr_t reader_attr;
   pthread_attr_t writer_attr;
+
+  reader_buffer = (packets_t *)malloc(sizeof(packets_t));
+  writer_buffer = (packets_t *)malloc(sizeof(packets_t));
+  memset(reader_buffer, 0, sizeof(packets_t));
+  memset(writer_buffer, 0, sizeof(packets_t));
   while (1) {
+    printf("%p\n", in_descriptor);
     if (!check_connection()) {
-      ++index;
       if (in_descriptor == NULL) {
         in_descriptor = fopen("ippool.dat", "r");
         fscanf(in_descriptor, "%d", &server_counts);
+        printf("Servers count %d\n", server_counts);
       }
 
       read_socket_from_file(in_descriptor, hostname, &port);
@@ -166,12 +180,14 @@ int main(int argc, char **argv) {
       if (client_socket_write == -1 || client_socket_read == -1) {
         printf("Connection fail.\n");
         state_connection = CONN_FALSE;
+        ++index;
         if (server_counts == index) {
           printf("All servers unreacheble!\n");
           break;
         }
       } else {
         state_connection = CONN_TRUE;
+        index = 0;
       }
     }
     if (check_connection()) {
@@ -188,7 +204,7 @@ int main(int argc, char **argv) {
       while (check_connection()) {
         //        if (game_state != GAME_IN_PROG)
         send_packet(make_packet(SERVICE, NULL));
-        sleep(5);
+        sleep(2);
         game_state = GAME_IN_PROG;
         // process
         // Здесь должен быть курсач
@@ -205,8 +221,11 @@ int main(int argc, char **argv) {
         close(client_socket_read);
         client_socket_write = -1;
         client_socket_read = -1;
-        if (in_descriptor != NULL)
+        if (in_descriptor != NULL) {
           fclose(in_descriptor);
+          in_descriptor = NULL;
+          printf("Close config file\n");
+        }
         // connection mutex
         pthread_mutex_lock(&connection_mutex);
         state_connection = reconnection();
@@ -216,10 +235,15 @@ int main(int argc, char **argv) {
       }
     }
   }
-  if (writer_tid != -1)
+  printf("Wait for join threads\n");
+  if (writer_tid != -1) {
     pthread_join(writer_tid, NULL);
-  if (reader_tid != -1)
+    printf("Writer join\n");
+  }
+  if (reader_tid != -1) {
     pthread_join(reader_tid, NULL);
+    printf("Reader join\n");
+  }
   close(client_socket_write);
   close(client_socket_read);
   return 0;

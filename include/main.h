@@ -36,7 +36,8 @@ typedef enum type_packet {
   CONN_ACK = 3,
   CONN_NEW = 4,
   CONN_EST = 5,
-  CONN_RECONNECT = 6
+  CONN_RECONNECT = 6,
+  NONE = 100
 } type_packet_t;
 // TODO: Packet ID?
 typedef struct packet {
@@ -46,11 +47,24 @@ typedef struct packet {
   char buffer[MAXDATASIZE];
 } packet_t;
 
+typedef struct packet_queue {
+  packet_t p;
+  struct packet_queue *next;
+} packet_queue_t;
+
+typedef struct packet_queue_header {
+  struct packet_queue *tail;
+  struct packet_queue *head;
+  size_t len;
+  packet_queue_t *q;
+} packets_t;
 packet_t make_packet(type_packet_t type, char *buff);
 int send_packet(packet_t p);
 int get_packet(packet_t *p);
 int check_connection();
 int wait_ack(int packet_id);
 int send_ack(int packet_id);
+void push_queue(packet_t p, packets_t **queue);
+packet_t pop_queue(packets_t **queue);
 
 #endif
