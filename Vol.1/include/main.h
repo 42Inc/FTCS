@@ -19,7 +19,7 @@
 #include <unistd.h>
 
 #define GAMES 2
-#define PORT 1025
+#define PORT 65500
 #define MAXDATASIZE 256
 #define BACKLOG games * 2
 #define WINCOORD 8

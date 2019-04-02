@@ -84,8 +84,7 @@ int send_ack(int packet_id) {
 int wait_ack(int packet_id) {
   long int duration = 1000000000;
   printf("Wait ack\n");
-  while (1) {
-    // connection mutex
+  while (duration--) {
     if (ack_id == packet_id) {
       ack_id = -1;
       printf("Receive ack\n");
@@ -96,19 +95,16 @@ int wait_ack(int packet_id) {
 }
 
 int send_packet(packet_t p) {
-  // connection mutex
   pthread_mutex_lock(&writer_mutex);
   push_queue(p, &writer_buffer);
-  //  writer_buffer[writer_buffer_len++] = p;
   pthread_mutex_unlock(&writer_mutex);
   return TRUE;
 }
 
 int get_packet(packet_t *p) {
-  // connection mutex
   pthread_mutex_lock(&reader_mutex);
   if (reader_buffer_len > 0) {
-    *p = pop_queue(&reader_buffer); // reader_buffer[reader_buffer_len--];
+    *p = pop_queue(&reader_buffer);
     pthread_mutex_unlock(&reader_mutex);
     return TRUE;
   }

@@ -158,7 +158,6 @@ int main(int argc, char **argv) {
   memset(reader_buffer, 0, sizeof(packets_t));
   memset(writer_buffer, 0, sizeof(packets_t));
   while (1) {
-    printf("%p\n", in_descriptor);
     if (!check_connection()) {
       if (in_descriptor == NULL) {
         in_descriptor = fopen("ippool.dat", "r");
@@ -202,17 +201,14 @@ int main(int argc, char **argv) {
       send_packet(make_packet(CONN_NEW, NULL));
       printf("Start\n");
       while (check_connection()) {
-        //        if (game_state != GAME_IN_PROG)
         send_packet(make_packet(SERVICE, NULL));
         sleep(2);
         game_state = GAME_IN_PROG;
-        // process
-        // Здесь должен быть курсач
+        // Place course work here
       }
 
       if (game_state) {
         index = 0;
-        // connection mutex
         pthread_mutex_lock(&connection_mutex);
         state_connection = CONN_FALSE;
         pthread_mutex_unlock(&connection_mutex);
@@ -226,7 +222,6 @@ int main(int argc, char **argv) {
           in_descriptor = NULL;
           printf("Close config file\n");
         }
-        // connection mutex
         pthread_mutex_lock(&connection_mutex);
         state_connection = reconnection();
         pthread_mutex_unlock(&connection_mutex);
@@ -253,7 +248,6 @@ int reconnection() {
   int trying_reconnect = 0;
 
   while (trying_reconnect++ < 50) {
-    // mutex
     client_socket_write = client_tcp_connect(hostIP, port);
     client_socket_read = client_tcp_connect(hostIP, port + 1);
     if (client_socket_write != -1 && client_socket_read != -1) {

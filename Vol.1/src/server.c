@@ -180,18 +180,16 @@ int main(int argc, char **argv) {
 
   printf("Listening ports : %d-%d\n", port, port + 1);
   printf("Games: %d\n", games);
-
+  // Place inter-server-communication here. TODO -> fork with ippool.dat
   server_socket_read = create_server_tcp_socket(htonl(INADDR_ANY), port);
   server_socket_write = create_server_tcp_socket(htonl(INADDR_ANY), port + 1);
 
   int count = 0;
   while (games_available > 0) {
-    // connection mutex
     client_socket_read = accept_tcp_connection(server_socket_read);
     client_socket_write = accept_tcp_connection(server_socket_write);
     // Child process
     if (!fork()) {
-      // connection mutex
       state_connection = CONN_TRUE;
       pthread_attr_init(&reader_attr);
       pthread_attr_init(&writer_attr);
