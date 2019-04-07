@@ -1,3 +1,5 @@
-2
-localhost:65500
-localhost:65502
+3
+1 localhost:65500
+2 localhost:65502
+3 localhost:65504
+4 localhost:65506

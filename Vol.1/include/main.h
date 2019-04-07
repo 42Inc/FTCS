@@ -38,10 +38,10 @@ typedef enum type_packet {
   CONN_NEW = 4,
   CONN_EST = 5,
   CONN_RECONNECT = 6,
-  SERVER = 7,
+  CONN_SERVER = 7,
   NONE = 100
 } type_packet_t;
-// TODO: Packet ID?
+
 typedef struct packet {
   enum type_packet type;
   int packet_id;
@@ -51,6 +51,7 @@ typedef struct packet {
 
 typedef struct servers {
   int port;
+  int number;
   char ip[MAXDATASIZE];
   struct servers *next;
 } srv_t;
@@ -72,16 +73,19 @@ typedef struct packet_queue_header {
   packet_queue_t *q;
 } packets_t;
 
-packet_t make_packet(type_packet_t type, char *buff);
+packet_t
+make_packet(type_packet_t type, int client_id, int packet_id, char *buff);
 int send_packet(packet_t p);
 int get_packet(packet_t *p);
 int check_connection();
 int wait_ack(int packet_id);
-int send_ack(int packet_id);
+int send_ack(int client_id, int packet_id);
 void push_queue(packet_t p, packets_t **queue);
 packet_t pop_queue(packets_t **queue);
 int reconnection();
 int read_servers_pool(char *filename);
 void create_connections_to_servers();
 void remove_this_server_from_list();
+int client_tcp_connect(struct hostent *ip, int port);
+
 #endif

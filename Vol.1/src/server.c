@@ -1,13 +1,15 @@
 #include "./../include/main.h"
 
 int games = GAMES;
-
+int *pid = NULL;
 extern char hostname[MAXDATASIZE];
 extern int port;
 int server_socket_read = -1;
 int server_socket_write = -1;
 static int games_available = GAMES;
 extern int client_socket_read;
+extern int writer_join;
+extern int reader_join;
 extern int client_socket_write;
 extern int state_connection;
 extern packets_t *reader_buffer;
@@ -20,7 +22,7 @@ extern pthread_mutex_t reader_mutex;
 extern pthread_mutex_t writer_mutex;
 extern pthread_mutex_t helper_mutex;
 extern srv_pool_t *known_servers;
-
+srv_t *this_server = NULL;
 void *server_reader() {
   int recv_result;
   int poll_return;
@@ -35,7 +37,8 @@ server_reader_start:
   pfd.events = POLLIN | POLLHUP | POLLRDNORM;
   while (1) {
     while (!check_connection())
-      ;
+      if (reader_join)
+        return NULL;
     pthread_mutex_lock(&connection_mutex);
     pfd.fd = client_socket_read;
     pthread_mutex_unlock(&connection_mutex);
@@ -46,24 +49,26 @@ server_reader_start:
       pthread_mutex_unlock(&connection_mutex);
 
       if (recv_result <= 0) {
-        fprintf(stderr,
-                "WTF?! Poll return: %d vs %d\nDisconnect!\n",
-                poll_return,
-                recv_result);
+        /*        fprintf(stderr,
+                        "WTF?! Poll return: %d vs %d\nDisconnect!\n",
+                        poll_return,
+                        recv_result);
+        */
         pthread_mutex_lock(&connection_mutex);
         state_connection = CONN_FALSE;
         pthread_mutex_unlock(&connection_mutex);
       } else {
-        push_queue(p, &reader_buffer);
-        fprintf(stderr,
-                "Server Reader : Receive %d[%lu].%d\n",
-                recv_result,
-                reader_buffer->len,
-                p.type);
-        if (p.type != CONN_ACK)
-          send_ack(0);
-        else {
-          ack_id = 0;
+        //        push_queue(p, &reader_buffer);
+        /*        fprintf(stderr,
+                        "Server Reader : Receive %d[%lu].%d\n",
+                        recv_result,
+                        reader_buffer->len,
+                        p.type);*/
+        if (p.type != CONN_ACK) {
+          push_queue(p, &reader_buffer);
+          send_ack(p.client_id, p.packet_id);
+        } else {
+          ack_id = p.packet_id;
         }
       }
       pthread_mutex_unlock(&reader_mutex);
@@ -80,8 +85,10 @@ server_writer_start:
   send_result = 0;
   trying_send = 0;
   while (1) {
-    while (!check_connection())
-      ;
+    while (!check_connection()) {
+      if (writer_join)
+        return NULL;
+    }
     pthread_mutex_lock(&writer_mutex);
     if (writer_buffer->len > 0) {
       // connection mutex
@@ -91,20 +98,20 @@ server_writer_start:
         pthread_mutex_lock(&connection_mutex);
         send_result = send(client_socket_write, &p, sizeof(packet_t), 0);
         pthread_mutex_unlock(&connection_mutex);
-        if (p.type == CONN_ACK || wait_ack(0)) {
+        if (p.type == CONN_ACK || wait_ack(p.packet_id)) {
           //        --writer_buffer_len;
           trying_send = 0;
-          fprintf(stderr, "Send with: %d\n", send_result);
+          //          fprintf(stderr, "Send with: %d\n", send_result);
         } else if (trying_send >= 10) {
           // connection mutex
           pthread_mutex_lock(&connection_mutex);
           state_connection = FALSE;
           pthread_mutex_unlock(&connection_mutex);
           trying_send = 0;
-          fprintf(stderr, "Ack is not receive. Connection drop!\n");
+          //          fprintf(stderr, "Ack is not receive. Connection drop!\n");
         } else {
           ++trying_send;
-          fprintf(stderr, "Ack is not receive. Resending!\n");
+          //          fprintf(stderr, "Ack is not receive. Resending!\n");
           goto sending;
         }
       }
@@ -205,6 +212,16 @@ int main(int argc, char **argv) {
         packet_t p;
         int state = get_packet(&p);
         if (state == TRUE) {
+          if (p.type == CONN_NEW) {
+            send_packet(
+                    make_packet(CONN_EST, p.client_id, rand() % 1000, NULL));
+          } else if (p.type == CONN_SERVER) {
+            fprintf(stderr,
+                    "Respond connection from other server[id - %d].%d %s\n",
+                    p.client_id,
+                    p.type,
+                    p.buffer);
+          }
           fprintf(stderr,
                   "Main %d %d %d %s\n",
                   p.type,
@@ -233,13 +250,72 @@ int main(int argc, char **argv) {
 void create_connections_to_servers() {
   remove_this_server_from_list();
   int i = 0;
-  int *pid = (int *)malloc(sizeof(int) * known_servers->count);
+  pid = (int *)malloc(sizeof(int) * known_servers->count);
+  srv_t *cursor = known_servers->srvs;
+  packet_t p;
+  pthread_t reader_tid = -1;
+  pthread_t writer_tid = -1;
+  pthread_attr_t reader_attr;
+  pthread_attr_t writer_attr;
   for (i = 0; i < known_servers->count; ++i) {
     if (!(pid[i] = fork())) {
-      fprintf(stderr, "Trying connect to other server... \n");
-      // Place inter-server-communication here. TODO -> fork with ippool.dat
+      fprintf(stderr,
+              "Trying connect to server[%d] %s:%d\n",
+              cursor->number,
+              cursor->ip,
+              cursor->port);
+    connect_to_other_server:
+      client_socket_write =
+              client_tcp_connect(gethostbyname(cursor->ip), cursor->port);
+      client_socket_read =
+              client_tcp_connect(gethostbyname(cursor->ip), cursor->port + 1);
+      if (client_socket_write == -1 || client_socket_read == -1) {
+        printf("Connection fail.\n");
+        sleep(5);
+        goto connect_to_other_server;
+      } else {
+        state_connection = CONN_TRUE;
+        if (reader_tid == -1 && writer_tid == -1) {
+          pthread_attr_init(&reader_attr);
+          pthread_attr_init(&writer_attr);
+          pthread_create(&reader_tid, &reader_attr, server_reader, NULL);
+          pthread_create(&writer_tid, &writer_attr, server_writer, NULL);
+        }
+        send_packet(make_packet(
+                CONN_NEW, this_server->number, rand() % 1000, NULL));
+        while (1) {
+          while (!get_packet(&p))
+            ;
+          if (p.type == CONN_EST) {
+            send_packet(make_packet(
+                    CONN_SERVER, this_server->number, rand() % 1000, NULL));
+            break;
+          }
+        }
+        while (check_connection()) {
+          if (get_packet(&p)) {
+                  // Place inter-server-communication here. TODO -> fork with ippool.dat
+
+          }
+            send_packet(make_packet(
+                    SERVICE, this_server->number, rand() % 1000, NULL));
+            sleep(2);
+        }
+        goto connect_to_other_server;
+      }
+      if (writer_tid != -1) {
+        pthread_join(writer_tid, NULL);
+        fprintf(stderr, "Writer join\n");
+      }
+      if (reader_tid != -1) {
+        pthread_join(reader_tid, NULL);
+        fprintf(stderr, "Reader join\n");
+      }
+      close(client_socket_read);
+      close(client_socket_write);
       exit(0);
     }
+    cursor = cursor->next;
   }
 }
 
@@ -248,10 +324,15 @@ void remove_this_server_from_list() {
   int i;
   srv_t *prev = NULL;
   srv_t *cursor = known_servers->srvs;
-
+  this_server = (srv_t *)malloc(sizeof(srv_t));
   while (cursor != NULL) {
     if (cursor->port == port && !(strcmp(hostname, cursor->ip))) {
-      fprintf(stderr, "Remove Server %s:%d\n", cursor->ip, cursor->port);
+      fprintf(stderr,
+              "Remove Server[%d] %s:%d\n",
+              cursor->number,
+              cursor->ip,
+              cursor->port);
+      memcpy(this_server, cursor, sizeof(srv_t));
       if (prev == NULL) {
         known_servers->srvs = cursor->next;
         known_servers->count--;

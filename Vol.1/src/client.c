@@ -6,6 +6,8 @@ int disconnect = FALSE;
 extern char hostname[MAXDATASIZE];
 extern int port;
 extern int client_socket_read;
+extern int writer_join;
+extern int reader_join;
 extern int client_socket_write;
 extern int state_connection;
 extern packets_t *reader_buffer;
@@ -19,27 +21,6 @@ extern pthread_mutex_t reader_mutex;
 extern pthread_mutex_t writer_mutex;
 extern pthread_mutex_t helper_mutex;
 extern srv_pool_t *known_servers;
-
-int client_tcp_connect(struct hostent *ip, int port) {
-  int sock;
-  struct sockaddr_in client;
-  sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-  if (sock == -1) {
-    fprintf(stderr, "Could not create socket\n");
-    exit(EXIT_FAILURE);
-  }
-
-  memset(&client, 0, sizeof(client));
-  client.sin_addr = *((struct in_addr *)ip->h_addr);
-  client.sin_family = AF_INET;
-  client.sin_port = htons(port);
-
-  if (connect(sock, (struct sockaddr *)&client, sizeof(client)) < 0) {
-    return -1;
-  }
-
-  return sock;
-}
 
 void *client_reader() {
   int recv_result;
@@ -55,7 +36,8 @@ client_reader_start:
   pfd.events = POLLIN | POLLHUP | POLLRDNORM;
   while (1) {
     while (!check_connection())
-      ;
+      if (reader_join)
+        return NULL;
     pthread_mutex_lock(&connection_mutex);
     pfd.fd = client_socket_read;
     pthread_mutex_unlock(&connection_mutex);
@@ -81,9 +63,9 @@ client_reader_start:
                 p.type);
         if (p.type != CONN_ACK) {
           push_queue(p, &reader_buffer);
-          send_ack(0);
+          send_ack(p.client_id, p.packet_id);
         } else {
-          ack_id = 0;
+          ack_id = p.packet_id;
         }
       }
       pthread_mutex_unlock(&reader_mutex);
@@ -100,8 +82,10 @@ client_writer_start:
   send_result = 0;
   trying_send = 0;
   while (1) {
-    while (!check_connection())
-      ;
+    while (!check_connection()) {
+      if (writer_join)
+        return NULL;
+    }
     pthread_mutex_lock(&writer_mutex);
     if (writer_buffer->len > 0) {
       // connection mutex
@@ -112,7 +96,7 @@ client_writer_start:
         send_result = send(client_socket_write, &p, sizeof(packet_t), 0);
         pthread_mutex_unlock(&connection_mutex);
 
-        if (p.type == CONN_ACK || wait_ack(0)) {
+        if (p.type == CONN_ACK || wait_ack(p.packet_id)) {
           //        --writer_buffer_len;
           trying_send = 0;
           fprintf(stderr,
@@ -197,10 +181,10 @@ int main(int argc, char **argv) {
         pthread_create(&writer_tid, &writer_attr, client_writer, NULL);
       }
       // make hello packet
-      send_packet(make_packet(CONN_NEW, NULL));
+      send_packet(make_packet(CONN_NEW, rand() % 1000, rand() % 1000, NULL));
       printf("Start\n");
       while (check_connection()) {
-        send_packet(make_packet(SERVICE, NULL));
+        send_packet(make_packet(SERVICE, rand() % 1000, rand() % 1000, NULL));
         sleep(2);
         game_state = GAME_IN_PROG;
         // Place course work here

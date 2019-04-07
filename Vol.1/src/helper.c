@@ -1,7 +1,7 @@
 #include "./../include/main.h"
 
-int reader_buffer_len = 0;
-int writer_buffer_len = 0;
+int reader_join = 0;
+int writer_join = 0;
 int state_connection = CONN_FALSE;
 pthread_mutex_t connection_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t reader_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -18,14 +18,34 @@ packets_t *writer_buffer = NULL;
 srv_pool_t *known_servers = NULL;
 char hostname[256] = "localhost";
 int port = PORT; /* PORT*/
-;
 
+int client_tcp_connect(struct hostent *ip, int port) {
+  int sock;
+  struct sockaddr_in client;
+  sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  if (sock == -1) {
+    fprintf(stderr, "Could not create socket\n");
+    exit(EXIT_FAILURE);
+  }
+
+  memset(&client, 0, sizeof(client));
+  client.sin_addr = *((struct in_addr *)ip->h_addr);
+  client.sin_family = AF_INET;
+  client.sin_port = htons(port);
+
+  if (connect(sock, (struct sockaddr *)&client, sizeof(client)) < 0) {
+    return -1;
+  }
+
+  return sock;
+}
 int read_servers_pool(char *filename) {
   FILE *fd = fopen(filename, "r");
   int i = 0;
   srv_t *cursor = NULL;
   srv_t *p = NULL;
   int index = 0;
+  int prior = 0;
   char buffer[256] = {0};
   if (fd == NULL)
     return 1;
@@ -44,14 +64,16 @@ int read_servers_pool(char *filename) {
     }
     if (cursor == NULL)
       return 1;
+    fscanf(fd, "%d", &prior);
     fscanf(fd, "%s", buffer);
     while (buffer[index] != ':') { index++; }
     buffer[index] = '\0';
     cursor->port = atoi(&buffer[index + 1]);
+    cursor->number = prior;
     strcpy(cursor->ip, buffer);
     fprintf(stderr,
             "Read config[%d]: %s:%d %p\n",
-            i,
+            prior,
             cursor->ip,
             cursor->port,
             cursor);
@@ -84,11 +106,11 @@ void push_queue(packet_t p, packets_t **queue) {
       (*queue)->len = 1;
     }
   }
-  fprintf(stderr, "Push[%lu]!\n", (*queue)->len);
+  //  fprintf(stderr, "Push[%lu]!\n", (*queue)->len);
 }
 
 packet_t pop_queue(packets_t **queue) {
-  packet_t p = make_packet(NONE, NULL);
+  packet_t p = make_packet(NONE, 0, 0, NULL);
   if (*queue == NULL) {
     return p;
   } else {
@@ -100,15 +122,16 @@ packet_t pop_queue(packets_t **queue) {
       (*queue)->len--;
     }
   }
-  fprintf(stderr, "Pop[%lu]!\n", (*queue)->len);
+  //  fprintf(stderr, "Pop[%lu]!\n", (*queue)->len);
   return p;
 }
 
-packet_t make_packet(type_packet_t type, char *buff) {
+packet_t
+make_packet(type_packet_t type, int client_id, int packet_id, char *buff) {
   packet_t p;
   p.type = type;
-  p.client_id = rand() % 1000;
-  p.packet_id = rand() % 1000;
+  p.client_id = client_id;
+  p.packet_id = packet_id;
   if (buff != NULL) {
     strcpy(p.buffer, buff);
   } else {
@@ -117,23 +140,23 @@ packet_t make_packet(type_packet_t type, char *buff) {
   return p;
 }
 
-int send_ack(int packet_id) {
-  packet_t p = make_packet(CONN_ACK, NULL);
+int send_ack(int client_id, int packet_id) {
+  packet_t p = make_packet(CONN_ACK, client_id, packet_id, NULL);
   int send_result = 0;
   pthread_mutex_lock(&connection_mutex);
   send_result = send(client_socket_write, &p, sizeof(p), 0);
   pthread_mutex_unlock(&connection_mutex);
-  fprintf(stderr, "Send ack\n");
+  //  fprintf(stderr, "Send ack\n");
   return TRUE;
 }
 
 int wait_ack(int packet_id) {
   long int duration = 1000000000;
-  fprintf(stderr, "Wait ack\n");
+  //  fprintf(stderr, "Wait ack\n");
   while (duration--) {
     if (ack_id == packet_id) {
       ack_id = -1;
-      fprintf(stderr, "Receive ack\n");
+      //      fprintf(stderr, "Receive ack\n");
       return TRUE;
     }
   }
