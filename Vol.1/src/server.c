@@ -294,12 +294,12 @@ void create_connections_to_servers() {
         }
         while (check_connection()) {
           if (get_packet(&p)) {
-                  // Place inter-server-communication here. TODO -> fork with ippool.dat
-
+            // Place inter-server-communication here. TODO -> fork with
+            // ippool.dat
           }
-            send_packet(make_packet(
-                    SERVICE, this_server->number, rand() % 1000, NULL));
-            sleep(2);
+          send_packet(make_packet(
+                  SERVICE, this_server->number, rand() % 1000, NULL));
+          sleep(2);
         }
         goto connect_to_other_server;
       }

@@ -28,16 +28,17 @@ void *client_reader() {
   struct pollfd pfd;
   packet_t p;
 
-  printf("Start Reader!\n");
+  fprintf(stderr, "Start Reader!\n");
 client_reader_start:
   recv_result = 0;
   poll_return = 0;
   pfd.fd = client_socket_read;
   pfd.events = POLLIN | POLLHUP | POLLRDNORM;
   while (1) {
-    while (!check_connection())
+    while (!check_connection()) {
       if (reader_join)
         return NULL;
+    }
     pthread_mutex_lock(&connection_mutex);
     pfd.fd = client_socket_read;
     pthread_mutex_unlock(&connection_mutex);
@@ -144,7 +145,7 @@ int main(int argc, char **argv) {
         cursor = known_servers->srvs;
       }
 
-      printf("Connecting to %s:%d\n", cursor->ip, cursor->port);
+      fprintf(stderr, "Connecting to %s:%d\n", cursor->ip, cursor->port);
       if ((gethostname(hostname, sizeof(hostname))) == 0) {
         hostIP = gethostbyname(hostname);
       } else {
@@ -155,16 +156,16 @@ int main(int argc, char **argv) {
       client_socket_write = client_tcp_connect(hostIP, cursor->port);
       client_socket_read = client_tcp_connect(hostIP, cursor->port + 1);
       if (client_socket_write == -1 || client_socket_read == -1) {
-        printf("Connection fail.\n");
+        fprintf(stderr, "Connection fail.\n");
         state_connection = CONN_FALSE;
         ++index;
         cursor = cursor->next;
         if (known_servers->count == index) {
-          printf("All servers unreacheble!\n");
+          fprintf(stderr, "All servers unreacheble!\n");
           break;
         }
         if (cursor == NULL) {
-          printf("End of list!\n");
+          fprintf(stderr, "End of list!\n");
           break;
         }
       } else {
@@ -213,10 +214,12 @@ int main(int argc, char **argv) {
   }
   fprintf(stderr, "Wait for join threads\n");
   if (writer_tid != -1) {
+    while (writer_join != 1) writer_join = 1;
     pthread_join(writer_tid, NULL);
     fprintf(stderr, "Writer join\n");
   }
   if (reader_tid != -1) {
+    while (reader_join != 1) reader_join = 1;
     pthread_join(reader_tid, NULL);
     fprintf(stderr, "Reader join\n");
   }
@@ -234,7 +237,7 @@ int reconnection() {
     if (client_socket_write != -1 && client_socket_read != -1) {
       return CONN_TRUE;
     } else {
-      printf("Reconnect fail!\n");
+      fprintf(stderr, "Reconnect fail!\n");
     }
   }
   return CONN_FALSE;
