@@ -19,6 +19,54 @@ srv_pool_t *known_servers = NULL;
 char hostname[256] = "localhost";
 int port = PORT; /* PORT*/
 
+void add_client(clients_t **root, pid_t pid, int id) {
+  clients_t *p;
+  p = (clients_t *)malloc(sizeof(clients_t));
+  if (p == NULL)
+    return;
+  p->pid = pid;
+  p->id = id;
+  p->game = -1;
+  if (*root == NULL) {
+    *root = p;
+  } else {
+    p->next = *root;
+    *root = p;
+  }
+}
+
+void disconnect_client(clients_t **root, pid_t pid) {
+  clients_t *p = *root;
+  if (*root == NULL)
+    return;
+  while (p != NULL) {
+    if (p->pid == pid) {
+      p->pid = -1;
+    }
+    p = p->next;
+  }
+}
+
+void remove_client(clients_t **root, pid_t pid) {
+  clients_t *prev = NULL;
+  clients_t *p = *root;
+  if (*root == NULL)
+    return;
+  while (p != NULL) {
+    if (p->pid == pid) {
+      if (prev != NULL) {
+        prev->next = p->next;
+        free(p);
+      } else {
+        *root = p->next;
+        free(p);
+      }
+    }
+    prev = p;
+    p = p->next;
+  }
+}
+
 int client_tcp_connect(struct hostent *ip, int port) {
   int sock;
   struct sockaddr_in client;
@@ -39,6 +87,7 @@ int client_tcp_connect(struct hostent *ip, int port) {
 
   return sock;
 }
+
 int read_servers_pool(char *filename) {
   FILE *fd = fopen(filename, "r");
   int i = 0;
@@ -115,7 +164,7 @@ packet_t pop_queue(packets_t **queue) {
     return p;
   } else {
     if ((*queue)->q != NULL) {
-      p = (*queue)->head->p;
+      memcpy(&p, &(*queue)->head->p, sizeof(packet_t));
       (*queue)->q = (*queue)->head->next;
       free((*queue)->head);
       (*queue)->head = (*queue)->q;

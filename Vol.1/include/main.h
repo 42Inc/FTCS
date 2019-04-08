@@ -39,8 +39,16 @@ typedef enum type_packet {
   CONN_EST = 5,
   CONN_RECONNECT = 6,
   CONN_SERVER = 7,
+  CONN_CLIENT = 8,
   NONE = 100
 } type_packet_t;
+
+typedef struct client {
+  pid_t pid;
+  int id;
+  int game;
+  struct client *next;
+} clients_t;
 
 typedef struct packet {
   enum type_packet type;
@@ -60,6 +68,14 @@ typedef struct servers_pool {
   int count;
   struct servers *srvs;
 } srv_pool_t;
+
+typedef struct game {
+  int id;
+  int player1;
+  int player2;
+  int owner;
+  struct game *next;
+} games_t;
 
 typedef struct packet_queue {
   packet_t p;
@@ -87,5 +103,5 @@ int read_servers_pool(char *filename);
 void create_connections_to_servers();
 void remove_this_server_from_list();
 int client_tcp_connect(struct hostent *ip, int port);
-
+void server_connection(srv_t *cursor);
 #endif

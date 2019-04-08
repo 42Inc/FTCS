@@ -22,13 +22,15 @@ extern pthread_mutex_t writer_mutex;
 extern pthread_mutex_t helper_mutex;
 extern srv_pool_t *known_servers;
 
+int client_id = -1;
+int game_id = -1;
+
 void *client_reader() {
   int recv_result;
   int poll_return;
   struct pollfd pfd;
   packet_t p;
 
-  fprintf(stderr, "Start Reader!\n");
 client_reader_start:
   recv_result = 0;
   poll_return = 0;
@@ -49,19 +51,10 @@ client_reader_start:
       pthread_mutex_unlock(&connection_mutex);
 
       if (recv_result <= 0) {
-        fprintf(stderr,
-                "WTF?! Poll return: %d vs %d\nDisconnect!\n",
-                poll_return,
-                recv_result);
         pthread_mutex_lock(&connection_mutex);
         state_connection = CONN_FALSE;
         pthread_mutex_unlock(&connection_mutex);
       } else {
-        fprintf(stderr,
-                "Client Reader : Receive %d[%lu].%d\n",
-                recv_result,
-                reader_buffer->len,
-                p.type);
         if (p.type != CONN_ACK) {
           push_queue(p, &reader_buffer);
           send_ack(p.client_id, p.packet_id);
@@ -78,7 +71,6 @@ void *client_writer() {
   int send_result;
   int trying_send;
   packet_t p;
-  fprintf(stderr, "Start Writer!\n");
 client_writer_start:
   send_result = 0;
   trying_send = 0;
@@ -89,7 +81,6 @@ client_writer_start:
     }
     pthread_mutex_lock(&writer_mutex);
     if (writer_buffer->len > 0) {
-      // connection mutex
       p = pop_queue(&writer_buffer);
     sending:
       if (p.type != NONE) {
@@ -98,31 +89,23 @@ client_writer_start:
         pthread_mutex_unlock(&connection_mutex);
 
         if (p.type == CONN_ACK || wait_ack(p.packet_id)) {
-          //        --writer_buffer_len;
           trying_send = 0;
-          fprintf(stderr,
-                  "Client Writer : Send with: %d.%d\n",
-                  send_result,
-                  p.type);
         } else if (trying_send >= 10) {
-          // connection mutex
           pthread_mutex_lock(&connection_mutex);
           state_connection = FALSE;
           pthread_mutex_unlock(&connection_mutex);
           trying_send = 0;
-          fprintf(stderr,
-                  "Client Writer : Ack is not receive. Connection drop!\n");
         } else {
           ++trying_send;
-          fprintf(stderr,
-                  "Client Writer : Ack is not receive. Resending! %d \n",
-                  trying_send);
           goto sending;
         }
       }
     }
     pthread_mutex_unlock(&writer_mutex);
   }
+}
+
+void connection() {
 }
 
 int main(int argc, char **argv) {
@@ -134,6 +117,7 @@ int main(int argc, char **argv) {
   pthread_attr_t reader_attr;
   pthread_attr_t writer_attr;
   srv_t *cursor = NULL;
+  packet_t p;
   reader_buffer = (packets_t *)malloc(sizeof(packets_t));
   writer_buffer = (packets_t *)malloc(sizeof(packets_t));
   memset(reader_buffer, 0, sizeof(packets_t));
@@ -182,12 +166,25 @@ int main(int argc, char **argv) {
         pthread_create(&writer_tid, &writer_attr, client_writer, NULL);
       }
       // make hello packet
-      send_packet(make_packet(CONN_NEW, rand() % 1000, rand() % 1000, NULL));
+      send_packet(make_packet(CONN_NEW, 0, 0, NULL));
       printf("Start\n");
+      game_state = GAME_IN_PROG;
       while (check_connection()) {
-        send_packet(make_packet(SERVICE, rand() % 1000, rand() % 1000, NULL));
+        while (!get_packet(&p))
+          ;
+        if (p.type == CONN_EST) {
+          send_packet(make_packet(CONN_CLIENT, client_id, 0, NULL));
+        } else if (p.type == SERVICE) {
+          if (client_id == -1)
+            client_id = p.client_id;
+          break;
+        }
+      }
+      if (state_connection == CONN_TRUE)
+        printf("Connection established. Client ID : %d\n", client_id);
+      while (check_connection()) {
+        send_packet(make_packet(SERVICE, client_id, 0, NULL));
         sleep(2);
-        game_state = GAME_IN_PROG;
         // Place course work here
       }
 
@@ -209,6 +206,9 @@ int main(int argc, char **argv) {
         pthread_mutex_unlock(&connection_mutex);
         if (check_connection())
           fprintf(stderr, "Reconnect!\n");
+      } else {
+        // End of game
+        break;
       }
     }
   }
