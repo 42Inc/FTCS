@@ -1,7 +1,7 @@
 #include "./../include/main.h"
 
 int games = GAMES;
-pid_t *pid = NULL;
+pid_t *pids = NULL;
 extern char hostname[MAXDATASIZE];
 extern int port;
 int server_socket_read = -1;
@@ -22,23 +22,47 @@ extern pthread_mutex_t reader_mutex;
 extern pthread_mutex_t writer_mutex;
 extern pthread_mutex_t helper_mutex;
 extern srv_pool_t *known_servers;
+struct sigaction child;
+sigset_t setchild;
+struct sigaction usr1;
+sigset_t setusr1;
+pid_t mainpid = -1;
 srv_t *this_server = NULL;
 int shutdown_server = 0;
 clients_t *cl_pids = NULL;
 clients_t *se_pids = NULL;
 games_t *chumbers = NULL;
-
+char field[10] = "AAAAAAAAA";
 pthread_mutex_t mut = PTHREAD_MUTEX_INITIALIZER;
-void sigchld_handler(int s) {
-  pid_t pid = -1;
-  int status;
-  while ((pid = waitpid(-1, &status, WNOHANG)) > 0)
-    ;
+long int clients_available = 0;
+
+void sigchld_handler(int s, siginfo_t *info, void *param) {
+  pid_t pid = info->si_pid;
+  int id = -1;
+  clients_t *cursor = se_pids;
+
   pthread_mutex_lock(&mut);
   if (pid > 0) {
-    remove_client(&cl_pids, pid);
+    while (cursor != NULL) {
+      if (pid == cursor->pid) {
+        id = cursor->id;
+        break;
+      }
+      cursor = cursor->next;
+    }
+    if ((id = disconnect_client(&cl_pids, pid)) > known_servers->count + 1) {
+      fprintf(stderr, "Disconnect client[id - %d|pid - %d]\n", id, pid);
+    } else if (id >= 0) {
+      fprintf(stderr, "Disconnect server[id - %d|pid - %d]\n", id, pid);
+    } else
+      fprintf(stderr, "Ignore signal from [pid - %d]\n", pid);
   }
   pthread_mutex_unlock(&mut);
+}
+
+void sigusr1_handler(int s, siginfo_t *info, void *param) {
+  pid_t pid = info->si_pid;
+  fprintf(stderr, "Respond SIGUSR1 [pid - %d]\n", pid);
 }
 
 void *server_reader() {
@@ -47,7 +71,7 @@ void *server_reader() {
   struct pollfd pfd;
   packet_t p;
 
-  fprintf(stderr, "Start server Reader!\n");
+//  fprintf(stderr, "Start server Reader!\n");
 server_reader_start:
   recv_result = 0;
   poll_return = 0;
@@ -87,7 +111,7 @@ void *server_writer() {
   int send_result;
   int trying_send;
   packet_t p;
-  fprintf(stderr, "Start server Writer!\n");
+//  fprintf(stderr, "Start server Writer!\n");
 server_writer_start:
   send_result = 0;
   trying_send = 0;
@@ -152,7 +176,17 @@ int accept_tcp_connection(int server_socket) {
   unsigned int len = sizeof(connection_addr);
   if ((connection = accept(
                server_socket, (struct sockaddr *)&connection_addr, &len)) < 0) {
-    fprintf(stderr, "accept failed\n");
+    fprintf(stderr, "Accept failed\n");
+    clients_t *cursor = cl_pids;
+    while (cursor != NULL) {
+      kill(cursor->pid, SIGKILL);
+      cursor = cursor->next;
+    }
+    cursor = se_pids;
+    while (cursor != NULL) {
+      kill(cursor->pid, SIGKILL);
+      cursor = cursor->next;
+    }
     exit(EXIT_FAILURE);
   }
   fprintf(stdout,
@@ -162,6 +196,7 @@ int accept_tcp_connection(int server_socket) {
 }
 
 void *manager() {
+  if (clients_available > 0 && !(clients_available % 2)) {}
 }
 
 void client_connection() {
@@ -189,13 +224,16 @@ void client_connection() {
                 p.client_id,
                 p.type,
                 p.buffer);
+        kill(mainpid, SIGUSR1);
       } else if (p.type == CONN_CLIENT) {
-        client_id = rand() % 10;
+        client_id = rand() % (10 + known_servers->count + 1) +
+                known_servers->count + 1;
         if (p.client_id > 0) {
           client_id = p.client_id;
         }
         send_packet(make_packet(SERVICE, client_id, rand() % 1000, NULL));
         fprintf(stderr, "Respond connection from client[id - %d]\n", client_id);
+        kill(mainpid, SIGUSR1);
       }
       fprintf(stderr,
               "Main %d %d %d %s\n",
@@ -209,10 +247,14 @@ void client_connection() {
   printf("Disconnect\n");
   close(client_socket_read);
   close(client_socket_write);
-  if (writer_tid != -1)
+  if (writer_tid != -1) {
+    writer_join = 1;
     pthread_join(writer_tid, NULL);
-  if (reader_tid != -1)
+  }
+  if (reader_tid != -1) {
+    reader_join = 1;
     pthread_join(reader_tid, NULL);
+  }
   exit(0);
 }
 
@@ -224,16 +266,29 @@ int main(int argc, char **argv) {
   struct sockaddr_in their_addr[2]; // client
   socklen_t sin_size[2];
 
+  mainpid = getpid();
   reader_buffer = (packets_t *)malloc(sizeof(packets_t));
   writer_buffer = (packets_t *)malloc(sizeof(packets_t));
   memset(reader_buffer, 0, sizeof(packets_t));
   memset(writer_buffer, 0, sizeof(packets_t));
-  struct sigaction sa;
   opterr = 0;
-  sa.sa_handler = sigchld_handler;
-  sigemptyset(&sa.sa_mask);
-  sa.sa_flags = SA_RESTART;
-  if (sigaction(SIGCHLD, &sa, NULL) == -1) {
+
+  sigemptyset(&setchild);
+  sigaddset(&setchild, SIGCHLD);
+  child.sa_sigaction = sigchld_handler;
+  child.sa_mask = setchild;
+  child.sa_flags = SA_NOCLDSTOP | SA_RESTART;
+  if (sigaction(SIGCHLD, &child, NULL) == -1) {
+    perror("sigaction");
+    exit(1);
+  }
+
+  sigemptyset(&setusr1);
+  sigaddset(&setusr1, SIGUSR1);
+  usr1.sa_sigaction = sigusr1_handler;
+  usr1.sa_mask = setusr1;
+  usr1.sa_flags = SA_NOCLDSTOP | SA_RESTART | SA_SIGINFO;
+  if (sigaction(SIGUSR1, &usr1, NULL) == -1) {
     perror("sigaction");
     exit(1);
   }
@@ -264,6 +319,7 @@ int main(int argc, char **argv) {
     if (!(pid = fork())) {
       client_connection();
     } else {
+      fprintf(stderr, "PID connection : %d\n", pid);
       add_client(&cl_pids, pid, 0);
     }
     // Parent doesn.t need this
@@ -316,8 +372,7 @@ connect_to_other_server:
     }
     while (check_connection()) {
       if (get_packet(&p)) {
-        // Place inter-server-communication here. TODO -> fork with
-        // ippool.dat
+        // Place inter-server-communication here.
       }
       send_packet(
               make_packet(SERVICE, this_server->number, rand() % 1000, NULL));
@@ -341,11 +396,13 @@ connect_to_other_server:
 void create_connections_to_servers() {
   remove_this_server_from_list();
   int i = 0;
-  pid = (pid_t *)malloc(sizeof(pid_t) * known_servers->count);
+  pids = (pid_t *)malloc(sizeof(pid_t) * known_servers->count);
   srv_t *cursor = known_servers->srvs;
   for (i = 0; i < known_servers->count; ++i) {
-    if (!(pid[i] = fork())) {
+    if (!(pids[i] = fork())) {
       server_connection(cursor);
+    } else {
+      add_client(&se_pids, pids[i], cursor->number);
     }
     cursor = cursor->next;
   }

@@ -130,15 +130,18 @@ int main(int argc, char **argv) {
       }
 
       fprintf(stderr, "Connecting to %s:%d\n", cursor->ip, cursor->port);
-      if ((gethostname(hostname, sizeof(hostname))) == 0) {
-        hostIP = gethostbyname(hostname);
+      if ((gethostname(cursor->ip, sizeof(cursor->ip))) == 0) {
+        hostIP = gethostbyname(cursor->ip);
       } else {
         fprintf(stderr, "ERROR: - IP Address not found.");
         exit(EXIT_FAILURE);
       }
       // connection mutex
+      printf("5");
       client_socket_write = client_tcp_connect(hostIP, cursor->port);
+      printf("6");
       client_socket_read = client_tcp_connect(hostIP, cursor->port + 1);
+      printf("7");
       if (client_socket_write == -1 || client_socket_read == -1) {
         fprintf(stderr, "Connection fail.\n");
         state_connection = CONN_FALSE;
@@ -167,7 +170,6 @@ int main(int argc, char **argv) {
       }
       // make hello packet
       send_packet(make_packet(CONN_NEW, 0, 0, NULL));
-      printf("Start\n");
       game_state = GAME_IN_PROG;
       while (check_connection()) {
         while (!get_packet(&p))

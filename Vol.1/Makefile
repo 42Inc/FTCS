@@ -9,7 +9,7 @@ SRC_PATH := ./src
 BIN_PATH = ./bin
 INC_PATH = ./include
 INC := $(INC_PATH)/main.h
-CFLAGS := $(DEBUG) $(STD) -pthread
+CFLAGS := $(DEBUG) $(STD) -pthread -O0
 
 OBJ_CLIENT := $(OBJ_PATH)/$(CLIENT).o $(OBJ_PATH)/helper.o
 OBJ_SERVER := $(OBJ_PATH)/$(SERVER).o $(OBJ_PATH)/helper.o

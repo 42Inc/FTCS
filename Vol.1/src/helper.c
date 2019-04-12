@@ -19,6 +19,12 @@ srv_pool_t *known_servers = NULL;
 char hostname[256] = "localhost";
 int port = PORT; /* PORT*/
 
+int create_file(clients_t *client) {
+}
+
+int remove_file(clients_t *client) {
+}
+
 void add_client(clients_t **root, pid_t pid, int id) {
   clients_t *p;
   p = (clients_t *)malloc(sizeof(clients_t));
@@ -35,36 +41,43 @@ void add_client(clients_t **root, pid_t pid, int id) {
   }
 }
 
-void disconnect_client(clients_t **root, pid_t pid) {
+int disconnect_client(clients_t **root, pid_t pid) {
   clients_t *p = *root;
   if (*root == NULL)
-    return;
+    return -1;
   while (p != NULL) {
     if (p->pid == pid) {
       p->pid = -1;
+      return p->id;
     }
     p = p->next;
   }
+  return -1;
 }
 
-void remove_client(clients_t **root, pid_t pid) {
+int remove_client(clients_t **root, pid_t pid) {
   clients_t *prev = NULL;
   clients_t *p = *root;
   if (*root == NULL)
-    return;
+    return 1;
   while (p != NULL) {
     if (p->pid == pid) {
       if (prev != NULL) {
         prev->next = p->next;
+        remove_file(p);
         free(p);
+        return 0;
       } else {
         *root = p->next;
+        remove_file(p);
         free(p);
+        return 0;
       }
     }
     prev = p;
     p = p->next;
   }
+  return 1;
 }
 
 int client_tcp_connect(struct hostent *ip, int port) {
