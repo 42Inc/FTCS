@@ -7,6 +7,7 @@ pthread_mutex_t connection_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t reader_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t writer_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t helper_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 int client_socket_read = -1;
 int client_socket_write = -1;
@@ -28,56 +29,73 @@ int remove_file(clients_t *client) {
 void add_client(clients_t **root, pid_t pid, int id, int srv) {
   clients_t *p;
   p = (clients_t *)malloc(sizeof(clients_t));
-  if (p == NULL)
+  pthread_mutex_lock(&clients_mutex);
+  if (p == NULL) {
+    pthread_mutex_unlock(&clients_mutex);
     return;
+  }
   p->pid = pid;
   p->id = id;
   p->srv = srv;
   p->game = -1;
+  p->status = FALSE;
   if (*root == NULL) {
     *root = p;
   } else {
     p->next = *root;
     *root = p;
   }
+  pthread_mutex_unlock(&clients_mutex);
 }
 
 int disconnect_client(clients_t **root, pid_t pid) {
+  pthread_mutex_lock(&clients_mutex);
   clients_t *p = *root;
-  if (*root == NULL)
+  if (*root == NULL) {
+    pthread_mutex_unlock(&clients_mutex);
     return -1;
+  }
   while (p != NULL) {
     if (p->pid == pid) {
       p->pid = -1;
+      pthread_mutex_unlock(&clients_mutex);
       return p->id;
     }
     p = p->next;
   }
+  pthread_mutex_unlock(&clients_mutex);
   return -1;
 }
 
 int remove_client(clients_t **root, pid_t pid) {
   clients_t *prev = NULL;
   clients_t *p = *root;
-  if (*root == NULL)
+  pthread_mutex_lock(&clients_mutex);
+  if (*root == NULL) {
     return 1;
+    pthread_mutex_unlock(&clients_mutex);
+  }
   while (p != NULL) {
     if (p->pid == pid) {
       if (prev != NULL) {
         prev->next = p->next;
         remove_file(p);
         free(p);
+        pthread_mutex_unlock(&clients_mutex);
         return 0;
       } else {
         *root = p->next;
         remove_file(p);
         free(p);
+        pthread_mutex_unlock(&clients_mutex);
         return 0;
       }
     }
     prev = p;
     p = p->next;
   }
+  pthread_mutex_unlock(&clients_mutex);
+
   return 1;
 }
 

@@ -48,6 +48,7 @@ typedef struct client {
   int id;
   int srv;
   int game;
+  int status;
   struct client *next;
 } clients_t;
 
