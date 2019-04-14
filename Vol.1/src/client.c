@@ -137,11 +137,8 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
       }
       // connection mutex
-      printf("5");
       client_socket_write = client_tcp_connect(hostIP, cursor->port);
-      printf("6");
       client_socket_read = client_tcp_connect(hostIP, cursor->port + 1);
-      printf("7");
       if (client_socket_write == -1 || client_socket_read == -1) {
         fprintf(stderr, "Connection fail.\n");
         state_connection = CONN_FALSE;
@@ -177,7 +174,7 @@ int main(int argc, char **argv) {
         if (p.type == CONN_EST) {
           send_packet(make_packet(CONN_CLIENT, client_id, 0, NULL));
         } else if (p.type == SERVICE) {
-          if (client_id == -1)
+          if (!strcmp(p.buffer, "set_id"))
             client_id = p.client_id;
           break;
         }
@@ -195,19 +192,19 @@ int main(int argc, char **argv) {
         pthread_mutex_lock(&connection_mutex);
         state_connection = CONN_FALSE;
         pthread_mutex_unlock(&connection_mutex);
-        fprintf(stderr, "Connection drop. Trying reconnect.\n");
+        //        fprintf(stderr, "Connection drop. Trying reconnect.\n");
         close(client_socket_write);
         close(client_socket_read);
         client_socket_write = -1;
         client_socket_read = -1;
 
-        fprintf(stderr, "Reload config file\n");
+        //        fprintf(stderr, "Reload config file\n");
         cursor = known_servers->srvs;
         pthread_mutex_lock(&connection_mutex);
         state_connection = reconnection();
         pthread_mutex_unlock(&connection_mutex);
-        if (check_connection())
-          fprintf(stderr, "Reconnect!\n");
+        //        if (check_connection())
+        //          fprintf(stderr, "Reconnect!\n");
       } else {
         // End of game
         break;
@@ -238,8 +235,6 @@ int reconnection() {
     client_socket_read = client_tcp_connect(hostIP, port + 1);
     if (client_socket_write != -1 && client_socket_read != -1) {
       return CONN_TRUE;
-    } else {
-      fprintf(stderr, "Reconnect fail!\n");
     }
   }
   return CONN_FALSE;

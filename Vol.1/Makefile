@@ -51,6 +51,8 @@ clean:
 	rm -f $(BIN_PATH)/*
 	rm -f $(OBJ_PATH)/*.o
 	rm -rf $(OBJ_PATH) $(BIN_PATH)
+	rm -f *.game
+	rm -f *.pid
 
 restruct:
 	make clean

@@ -21,11 +21,14 @@ extern pthread_mutex_t connection_mutex;
 extern pthread_mutex_t reader_mutex;
 extern pthread_mutex_t writer_mutex;
 extern pthread_mutex_t helper_mutex;
+extern pthread_mutex_t clients_mutex;
 extern srv_pool_t *known_servers;
 struct sigaction child;
 sigset_t setchild;
 struct sigaction usr1;
 sigset_t setusr1;
+struct sigaction usr2;
+sigset_t setusr2;
 pid_t mainpid = -1;
 srv_t *this_server = NULL;
 int shutdown_server = 0;
@@ -35,34 +38,80 @@ games_t *chumbers = NULL;
 char field[10] = "AAAAAAAAA";
 pthread_mutex_t mut = PTHREAD_MUTEX_INITIALIZER;
 long int clients_available = 0;
+int manager_join = 0;
 
 void sigchld_handler(int s, siginfo_t *info, void *param) {
   pid_t pid = info->si_pid;
+  int sid = -1;
   int id = -1;
-  clients_t *cursor = se_pids;
+  clients_t *cursor = cl_pids;
 
   pthread_mutex_lock(&mut);
   if (pid > 0) {
     while (cursor != NULL) {
       if (pid == cursor->pid) {
-        id = cursor->id;
+        sid = cursor->id;
         break;
       }
       cursor = cursor->next;
     }
     if ((id = disconnect_client(&cl_pids, pid)) > known_servers->count + 1) {
       fprintf(stderr, "Disconnect client[id - %d|pid - %d]\n", id, pid);
-    } else if (id >= 0) {
-      fprintf(stderr, "Disconnect server[id - %d|pid - %d]\n", id, pid);
+      --clients_available;
+    } else if (sid > 0) {
+      fprintf(stderr, "Disconnect server[id - %d|pid - %d]\n", sid, pid);
     } else
-      fprintf(stderr, "Ignore signal from [pid - %d]\n", pid);
+      fprintf(stderr,
+              "Ignore SIGCHLD from [pid - %d] [%d %d %d]\n",
+              pid,
+              sid,
+              id,
+              known_servers->count + 1);
   }
   pthread_mutex_unlock(&mut);
 }
 
 void sigusr1_handler(int s, siginfo_t *info, void *param) {
   pid_t pid = info->si_pid;
-  fprintf(stderr, "Respond SIGUSR1 [pid - %d]\n", pid);
+  int id = -1;
+  clients_t *cursor = cl_pids;
+  char filename[20];
+  sprintf(filename, "%d.pid", pid);
+  FILE *file = fopen(filename, "r");
+  if (pid > 0) {
+    if (file == NULL) {
+      fprintf(stderr, "%s dont exist!", filename);
+      return;
+    }
+    fscanf(file, "%d", &id);
+  }
+  if (id > known_servers->count + 1) {
+    fprintf(stderr, "Client [pid - %d] set id [id - %d]\n", pid, id);
+    while (cursor != NULL) {
+      if (pid == cursor->pid) {
+        cursor->id = id;
+        break;
+      }
+      cursor = cursor->next;
+    }
+    ++clients_available;
+    // Place check-id logic here
+  } else if (id > 0) {
+    fprintf(stderr, "Server [pid - %d] set id [id - %d]\n", pid, id);
+    while (cursor != NULL) {
+      if (pid == cursor->pid) {
+        cursor->id = id;
+        break;
+      }
+      cursor = cursor->next;
+    }
+  } else
+    fprintf(stderr, "Ignore SIGUSR1 from [pid - %d]\n", pid);
+}
+
+void sigusr2_handler(int s, siginfo_t *info, void *param) {
+  pid_t pid = info->si_pid;
+  fprintf(stderr, "Ignore SIGUSR2 from [pid - %d]\n", pid);
 }
 
 void *server_reader() {
@@ -196,7 +245,10 @@ int accept_tcp_connection(int server_socket) {
 }
 
 void *manager() {
-  if (clients_available > 0 && !(clients_available % 2)) {}
+  while (!manager_join) {
+    if (clients_available > 0 && !(clients_available % 2)) {}
+  }
+  return NULL;
 }
 
 void client_connection() {
@@ -207,6 +259,8 @@ void client_connection() {
   pthread_attr_t reader_attr;
   pthread_attr_t writer_attr;
   state_connection = CONN_TRUE;
+  int pidfd = -1;
+  char str[128];
   pid = getpid();
   pthread_attr_init(&reader_attr);
   pthread_attr_init(&writer_attr);
@@ -224,6 +278,12 @@ void client_connection() {
                 p.client_id,
                 p.type,
                 p.buffer);
+        client_id = p.client_id;
+        sprintf(str, "%d.pid", pid);
+        pidfd = open(str, O_WRONLY | O_CREAT, 0666);
+        sprintf(str, "%d\n", client_id);
+        write(pidfd, str, strlen(str));
+        close(pidfd);
         kill(mainpid, SIGUSR1);
       } else if (p.type == CONN_CLIENT) {
         client_id = rand() % (10 + known_servers->count + 1) +
@@ -231,16 +291,15 @@ void client_connection() {
         if (p.client_id > 0) {
           client_id = p.client_id;
         }
-        send_packet(make_packet(SERVICE, client_id, rand() % 1000, NULL));
+        send_packet(make_packet(SERVICE, client_id, rand() % 1000, "set_id"));
         fprintf(stderr, "Respond connection from client[id - %d]\n", client_id);
+        sprintf(str, "%d.pid", pid);
+        pidfd = open(str, O_WRONLY | O_CREAT, 0666);
+        sprintf(str, "%d\n", client_id);
+        write(pidfd, str, strlen(str));
+        close(pidfd);
         kill(mainpid, SIGUSR1);
       }
-      fprintf(stderr,
-              "Main %d %d %d %s\n",
-              p.type,
-              p.packet_id,
-              p.client_id,
-              p.buffer);
     }
   }
 
@@ -266,7 +325,10 @@ int main(int argc, char **argv) {
   struct sockaddr_in their_addr[2]; // client
   socklen_t sin_size[2];
 
+  pthread_t manager_tid = -1;
+  pthread_attr_t manager_attr;
   mainpid = getpid();
+  fprintf(stderr, "Main process pid %d\n", mainpid);
   reader_buffer = (packets_t *)malloc(sizeof(packets_t));
   writer_buffer = (packets_t *)malloc(sizeof(packets_t));
   memset(reader_buffer, 0, sizeof(packets_t));
@@ -279,7 +341,7 @@ int main(int argc, char **argv) {
   child.sa_mask = setchild;
   child.sa_flags = SA_NOCLDSTOP | SA_RESTART;
   if (sigaction(SIGCHLD, &child, NULL) == -1) {
-    perror("sigaction");
+    perror("SIGCHLD");
     exit(1);
   }
 
@@ -289,9 +351,20 @@ int main(int argc, char **argv) {
   usr1.sa_mask = setusr1;
   usr1.sa_flags = SA_NOCLDSTOP | SA_RESTART | SA_SIGINFO;
   if (sigaction(SIGUSR1, &usr1, NULL) == -1) {
-    perror("sigaction");
+    perror("SIGUSR1");
     exit(1);
   }
+
+  sigemptyset(&setusr2);
+  sigaddset(&setusr2, SIGUSR2);
+  usr2.sa_sigaction = sigusr2_handler;
+  usr2.sa_mask = setusr2;
+  usr2.sa_flags = SA_NOCLDSTOP | SA_RESTART | SA_SIGINFO;
+  if (sigaction(SIGUSR2, &usr2, NULL) == -1) {
+    perror("SIGUSR2");
+    exit(1);
+  }
+
   while ((opt = getopt(argc, argv, "p:g:")) != -1) {
     switch (opt) {
     case 'p':
@@ -309,10 +382,13 @@ int main(int argc, char **argv) {
   printf("Games: %d\n", games);
   server_socket_read = create_server_tcp_socket(htonl(INADDR_ANY), port);
   server_socket_write = create_server_tcp_socket(htonl(INADDR_ANY), port + 1);
-  create_connections_to_servers();
 
+  pthread_attr_init(&manager_attr);
+  pthread_create(&manager_tid, &manager_attr, manager, NULL);
+  create_connections_to_servers();
   int count = 0;
   while (!shutdown_server) {
+    //    while (clients >= games * 2);
     client_socket_read = accept_tcp_connection(server_socket_read);
     client_socket_write = accept_tcp_connection(server_socket_write);
     // Child process
@@ -325,6 +401,11 @@ int main(int argc, char **argv) {
     // Parent doesn.t need this
     close(client_socket_read);
     close(client_socket_write);
+  }
+  if (manager_tid != -1) {
+    manager_join = 1;
+    pthread_join(manager_tid, NULL);
+    fprintf(stderr, "Manager join\n");
   }
   return 0;
 }
@@ -348,7 +429,7 @@ connect_to_other_server:
   client_socket_read =
           client_tcp_connect(gethostbyname(cursor->ip), cursor->port + 1);
   if (client_socket_write == -1 || client_socket_read == -1) {
-    printf("Connection fail.\n");
+    //  printf("Connection fail.\n");
     sleep(5);
     goto connect_to_other_server;
   } else {
@@ -381,10 +462,12 @@ connect_to_other_server:
     goto connect_to_other_server;
   }
   if (writer_tid != -1) {
+    writer_join = 1;
     pthread_join(writer_tid, NULL);
     fprintf(stderr, "Writer join\n");
   }
   if (reader_tid != -1) {
+    reader_join = 1;
     pthread_join(reader_tid, NULL);
     fprintf(stderr, "Reader join\n");
   }
@@ -402,6 +485,7 @@ void create_connections_to_servers() {
     if (!(pids[i] = fork())) {
       server_connection(cursor);
     } else {
+      fprintf(stderr, "[id: %d | pid: %d]\n", cursor->number, pids[i]);
       add_client(&se_pids, pids[i], cursor->number);
     }
     cursor = cursor->next;
