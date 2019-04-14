@@ -61,12 +61,7 @@ void sigchld_handler(int s, siginfo_t *info, void *param) {
     } else if (sid > 0) {
       fprintf(stderr, "Disconnect server[id - %d|pid - %d]\n", sid, pid);
     } else
-      fprintf(stderr,
-              "Ignore SIGCHLD from [pid - %d] [%d %d %d]\n",
-              pid,
-              sid,
-              id,
-              known_servers->count + 1);
+      fprintf(stderr, "Ignore SIGCHLD from [pid - %d] [%d %d %d]\n", pid, sid, id, known_servers->count + 1);
   }
   pthread_mutex_unlock(&mut);
 }
@@ -76,8 +71,8 @@ void sigusr1_handler(int s, siginfo_t *info, void *param) {
   int id = -1;
   clients_t *cursor = cl_pids;
   char filename[20];
-  sprintf(filename, "%d.pid", pid);
-  FILE *file = fopen(filename, "r");
+  sprintf(filename,"%d.pid", pid);
+  FILE* file = fopen(filename, "r");
   if (pid > 0) {
     if (file == NULL) {
       fprintf(stderr, "%s dont exist!", filename);
@@ -101,6 +96,7 @@ void sigusr1_handler(int s, siginfo_t *info, void *param) {
     while (cursor != NULL) {
       if (pid == cursor->pid) {
         cursor->id = id;
+        cursor->srv = TRUE;
         break;
       }
       cursor = cursor->next;
@@ -246,8 +242,9 @@ int accept_tcp_connection(int server_socket) {
 
 void *manager() {
   while (!manager_join) {
-    if (clients_available > 0 && !(clients_available % 2)) {}
-  }
+  if (clients_available > 0 && !(clients_available % 2)) {
+
+  }}
   return NULL;
 }
 
@@ -388,7 +385,7 @@ int main(int argc, char **argv) {
   create_connections_to_servers();
   int count = 0;
   while (!shutdown_server) {
-    //    while (clients >= games * 2);
+//    while (clients >= games * 2);
     client_socket_read = accept_tcp_connection(server_socket_read);
     client_socket_write = accept_tcp_connection(server_socket_write);
     // Child process
@@ -396,7 +393,7 @@ int main(int argc, char **argv) {
       client_connection();
     } else {
       fprintf(stderr, "PID connection : %d\n", pid);
-      add_client(&cl_pids, pid, 0);
+      add_client(&cl_pids, pid, 0, FALSE);
     }
     // Parent doesn.t need this
     close(client_socket_read);
@@ -429,7 +426,7 @@ connect_to_other_server:
   client_socket_read =
           client_tcp_connect(gethostbyname(cursor->ip), cursor->port + 1);
   if (client_socket_write == -1 || client_socket_read == -1) {
-    //  printf("Connection fail.\n");
+  //  printf("Connection fail.\n");
     sleep(5);
     goto connect_to_other_server;
   } else {
@@ -485,8 +482,8 @@ void create_connections_to_servers() {
     if (!(pids[i] = fork())) {
       server_connection(cursor);
     } else {
-      fprintf(stderr, "[id: %d | pid: %d]\n", cursor->number, pids[i]);
-      add_client(&se_pids, pids[i], cursor->number);
+      fprintf(stderr, "[id: %d | pid: %d]\n",  cursor->number, pids[i]);
+      add_client(&se_pids, pids[i], cursor->number, TRUE);
     }
     cursor = cursor->next;
   }

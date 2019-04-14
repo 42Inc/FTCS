@@ -25,13 +25,14 @@ int create_file(clients_t *client) {
 int remove_file(clients_t *client) {
 }
 
-void add_client(clients_t **root, pid_t pid, int id) {
+void add_client(clients_t **root, pid_t pid, int id, int srv) {
   clients_t *p;
   p = (clients_t *)malloc(sizeof(clients_t));
   if (p == NULL)
     return;
   p->pid = pid;
   p->id = id;
+  p->srv = srv;
   p->game = -1;
   if (*root == NULL) {
     *root = p;

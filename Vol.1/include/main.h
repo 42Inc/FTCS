@@ -46,6 +46,7 @@ typedef enum type_packet {
 typedef struct client {
   pid_t pid;
   int id;
+  int srv;
   int game;
   struct client *next;
 } clients_t;
