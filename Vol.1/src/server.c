@@ -39,7 +39,7 @@ char field[10] = "AAAAAAAAA";
 pthread_mutex_t mut = PTHREAD_MUTEX_INITIALIZER;
 long int clients_available = 0;
 int manager_join = 0;
-
+int regenerate_client_id = FALSE;
 void sigchld_handler(int s, siginfo_t *info, void *param) {
   pid_t pid = info->si_pid;
   int sid = -1;
@@ -60,9 +60,16 @@ void sigchld_handler(int s, siginfo_t *info, void *param) {
 
     if ((id = disconnect_client(&cl_pids, pid)) > known_servers->count + 1) {
       fprintf(stderr, "Disconnect client[id - %d|pid - %d]\n", id, pid);
+      remove_client(&cl_pids, pid);
+      cursor = cl_pids;
+      while (cursor != NULL) {
+        fprintf(stderr, "Client [id: %d | pid: %d]\n", cursor->id, cursor->pid);
+        cursor = cursor->next;
+      }
       --clients_available;
     } else if (sid > 0) {
       fprintf(stderr, "Disconnect server[id - %d|pid - %d]\n", sid, pid);
+      remove_client(&cl_pids, pid);
     } else
       fprintf(stderr, "Ignore SIGCHLD from [pid - %d] [%d %d]\n", pid, sid, id);
   }
@@ -84,8 +91,25 @@ void sigusr1_handler(int s, siginfo_t *info, void *param) {
     fscanf(file, "%d", &id);
   }
   if (id > known_servers->count + 1) {
+    // Place check client id here
     pthread_mutex_lock(&clients_mutex);
-
+    while (cursor != NULL) {
+      if (id == cursor->id) {
+        if (cursor->pid != pid) {
+          cursor->pid = pid;
+        }
+        fprintf(stderr,
+                "Client id is duplicate! [pid: %d | id: %d(%d)]\n",
+                pid,
+                id,
+                cursor->id);
+        pthread_mutex_unlock(&clients_mutex);
+        kill(pid, SIGUSR2);
+        return;
+      }
+      cursor = cursor->next;
+    }
+    cursor = cl_pids;
     while (cursor != NULL) {
       if (pid == cursor->pid) {
         cursor->id = id;
@@ -100,7 +124,6 @@ void sigusr1_handler(int s, siginfo_t *info, void *param) {
             id,
             cursor->id);
     ++clients_available;
-    // Place check-id logic here
   } else if (id > 0) {
     fprintf(stderr, "Server [pid - %d] set id [id - %d]\n", pid, id);
     pthread_mutex_lock(&clients_mutex);
@@ -120,7 +143,11 @@ void sigusr1_handler(int s, siginfo_t *info, void *param) {
 
 void sigusr2_handler(int s, siginfo_t *info, void *param) {
   pid_t pid = info->si_pid;
-  fprintf(stderr, "Ignore SIGUSR2 from [pid - %d]\n", pid);
+  fprintf(stderr, "Respond SIGUSR2 from [pid - %d]\n", pid);
+  if (pid == mainpid) {
+    regenerate_client_id = TRUE;
+  } else
+    fprintf(stderr, "Ignore SIGUSR2 from [pid - %d]\n", pid);
 }
 
 void *server_reader() {
@@ -288,7 +315,7 @@ void *manager() {
       pthread_mutex_unlock(&clients_mutex);
       sleep(5);
       if (id_f > 0 && id_s > 0) {
-        clients_available -= 2;
+        //        clients_available -= 2;
         sprintf(str, "%d.game", game_id);
         fd = open(str, O_WRONLY | O_CREAT, 0666);
         sprintf(str, "%d %d %d\n", this_server->number, id_f, id_s);
@@ -309,7 +336,7 @@ void *manager() {
 
 void client_connection() {
   pid_t pid;
-  int client_id;
+  int client_id = -1;
   pthread_t reader_tid = -1;
   pthread_t writer_tid = -1;
   pthread_attr_t reader_attr;
@@ -317,6 +344,7 @@ void client_connection() {
   state_connection = CONN_TRUE;
   int pidfd = -1;
   char str[128];
+
   pid = getpid();
   pthread_attr_init(&reader_attr);
   pthread_attr_init(&writer_attr);
@@ -326,6 +354,21 @@ void client_connection() {
   while (check_connection()) {
     packet_t p;
     int state = get_packet(&p);
+    if (regenerate_client_id) {
+      regenerate_client_id = FALSE;
+      client_id = -1;
+      if (client_id == -1)
+        client_id = rand() % (10 - (known_servers->count + 2)) +
+                known_servers->count + 2;
+      send_packet(make_packet(SERVICE, client_id, rand() % 1000, "set_id"));
+      fprintf(stderr, "Change client id [id - %d]\n", client_id);
+      sprintf(str, "%d.pid", pid);
+      pidfd = open(str, O_WRONLY | O_CREAT, 0666);
+      sprintf(str, "%d\n", client_id);
+      write(pidfd, str, strlen(str));
+      close(pidfd);
+      kill(mainpid, SIGUSR1);
+    }
     if (state == TRUE) {
       if (p.type == CONN_NEW) {
         send_packet(make_packet(CONN_EST, p.client_id, rand() % 1000, NULL));
@@ -343,11 +386,12 @@ void client_connection() {
         close(pidfd);
         kill(mainpid, SIGUSR1);
       } else if (p.type == CONN_CLIENT) {
-        client_id = rand() % (10 - (known_servers->count + 2)) +
-                known_servers->count + 2;
         if (p.client_id > 0) {
           client_id = p.client_id;
         }
+        if (client_id == -1)
+          client_id = rand() % (10 - (known_servers->count + 2)) +
+                  known_servers->count + 2;
         send_packet(make_packet(SERVICE, client_id, rand() % 1000, "set_id"));
         fprintf(stderr, "Respond connection from client[id - %d]\n", client_id);
         sprintf(str, "%d.pid", pid);
@@ -396,7 +440,7 @@ int main(int argc, char **argv) {
   sigaddset(&setchild, SIGCHLD);
   child.sa_sigaction = sigchld_handler;
   child.sa_mask = setchild;
-  child.sa_flags = SA_NOCLDSTOP | SA_RESTART;
+  child.sa_flags = SA_NOCLDSTOP | SA_RESTART | SA_SIGINFO;
   if (sigaction(SIGCHLD, &child, NULL) == -1) {
     perror("SIGCHLD");
     exit(1);

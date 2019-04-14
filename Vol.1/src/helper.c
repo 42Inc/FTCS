@@ -76,7 +76,7 @@ int remove_client(clients_t **root, pid_t pid) {
     pthread_mutex_unlock(&clients_mutex);
   }
   while (p != NULL) {
-    if (p->pid == pid) {
+    if (p->pid == pid || p->pid == -1) {
       if (prev != NULL) {
         prev->next = p->next;
         remove_file(p);

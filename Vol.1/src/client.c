@@ -183,6 +183,13 @@ int main(int argc, char **argv) {
         printf("Connection established. Client ID : %d\n", client_id);
       while (check_connection()) {
         send_packet(make_packet(SERVICE, client_id, 0, NULL));
+        if (get_packet(&p) == TRUE) {
+          if (p.type == SERVICE) {
+            if (!strcmp(p.buffer, "set_id"))
+              client_id = p.client_id;
+            fprintf(stderr, "Change client id [id: %d]\n", client_id);
+          }
+        }
         sleep(2);
         // Place course work here
       }
