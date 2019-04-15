@@ -14,12 +14,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
 #define GAMES 4
+#define TIMEOUT 10
 #define PORT 65500
 #define MAXDATASIZE 256
 #define BACKLOG games * 2
@@ -49,6 +51,7 @@ typedef struct client {
   int srv;
   int game;
   int status;
+  double time;
   struct client *next;
 } clients_t;
 
@@ -75,6 +78,8 @@ typedef struct game {
   int id;
   int player1;
   int player2;
+  pid_t p_player1;
+  pid_t p_player2;
   int owner;
   struct game *next;
 } games_t;
@@ -106,4 +111,19 @@ void create_connections_to_servers();
 void remove_this_server_from_list();
 int client_tcp_connect(struct hostent *ip, int port);
 void server_connection(srv_t *cursor);
+
+int disconnect_client(clients_t **root, pid_t pid, pthread_mutex_t *mutex);
+int remove_client(clients_t **root, pid_t pid, pthread_mutex_t *mutex);
+void add_client(
+        clients_t **root, pid_t pid, int id, int srv, pthread_mutex_t *mutex);
+
+void add_game(
+        games_t **root,
+        pid_t id,
+        int f,
+        int s,
+        pid_t pf,
+        pid_t ps,
+        int o,
+        pthread_mutex_t *mutex);
 #endif

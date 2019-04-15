@@ -22,6 +22,8 @@ extern pthread_mutex_t reader_mutex;
 extern pthread_mutex_t writer_mutex;
 extern pthread_mutex_t helper_mutex;
 extern pthread_mutex_t clients_mutex;
+extern pthread_mutex_t servers_mutex;
+extern pthread_mutex_t games_mutex;
 extern srv_pool_t *known_servers;
 struct sigaction child;
 sigset_t setchild;
@@ -40,6 +42,8 @@ pthread_mutex_t mut = PTHREAD_MUTEX_INITIALIZER;
 long int clients_available = 0;
 int manager_join = 0;
 int regenerate_client_id = FALSE;
+games_t *game_pids = NULL;
+
 void sigchld_handler(int s, siginfo_t *info, void *param) {
   pid_t pid = info->si_pid;
   int sid = -1;
@@ -58,9 +62,10 @@ void sigchld_handler(int s, siginfo_t *info, void *param) {
     }
     pthread_mutex_unlock(&clients_mutex);
 
-    if ((id = disconnect_client(&cl_pids, pid)) > known_servers->count + 1) {
+    if ((id = disconnect_client(&cl_pids, pid, &clients_mutex)) >
+        known_servers->count + 1) {
       fprintf(stderr, "Disconnect client[id - %d|pid - %d]\n", id, pid);
-      remove_client(&cl_pids, pid);
+      remove_client(&cl_pids, pid, &clients_mutex);
       cursor = cl_pids;
       while (cursor != NULL) {
         fprintf(stderr, "Client [id: %d | pid: %d]\n", cursor->id, cursor->pid);
@@ -69,7 +74,7 @@ void sigchld_handler(int s, siginfo_t *info, void *param) {
       --clients_available;
     } else if (sid > 0) {
       fprintf(stderr, "Disconnect server[id - %d|pid - %d]\n", sid, pid);
-      remove_client(&cl_pids, pid);
+      remove_client(&cl_pids, pid, &clients_mutex);
     } else
       fprintf(stderr, "Ignore SIGCHLD from [pid - %d] [%d %d]\n", pid, sid, id);
   }
@@ -81,62 +86,66 @@ void sigusr1_handler(int s, siginfo_t *info, void *param) {
   int id = -1;
   clients_t *cursor = cl_pids;
   char filename[20];
-  sprintf(filename, "%d.pid", pid);
+  char cmd[20];
+  sprintf(filename, "%d.pid", pid == mainpid ? getpid() : pid);
   FILE *file = fopen(filename, "r");
   if (pid > 0) {
     if (file == NULL) {
       fprintf(stderr, "%s dont exist!", filename);
       return;
     }
+    fscanf(file, "%s", cmd);
     fscanf(file, "%d", &id);
   }
-  if (id > known_servers->count + 1) {
-    // Place check client id here
-    pthread_mutex_lock(&clients_mutex);
-    while (cursor != NULL) {
-      if (id == cursor->id) {
-        if (cursor->pid != pid) {
-          cursor->pid = pid;
+  if (pid == mainpid && (!strcmp(cmd, "winner") || !strcmp(cmd, "looser"))) {
+    send_packet(make_packet(SERVICE, id, 0, cmd));
+  } else if (!strcmp(cmd, "set_id")) {
+    if (id > known_servers->count + 1) {
+      // Place check client id here
+      pthread_mutex_lock(&clients_mutex);
+      while (cursor != NULL) {
+        if (id == cursor->id) {
+          fprintf(stderr,
+                  "Client id is duplicate! [pid: %d | id: %d(%d)]\n",
+                  pid,
+                  id,
+                  cursor->id);
+          pthread_mutex_unlock(&clients_mutex);
+          kill(pid, SIGUSR2);
+          return;
         }
-        fprintf(stderr,
-                "Client id is duplicate! [pid: %d | id: %d(%d)]\n",
-                pid,
-                id,
-                cursor->id);
-        pthread_mutex_unlock(&clients_mutex);
-        kill(pid, SIGUSR2);
-        return;
+        cursor = cursor->next;
       }
-      cursor = cursor->next;
-    }
-    cursor = cl_pids;
-    while (cursor != NULL) {
-      if (pid == cursor->pid) {
-        cursor->id = id;
-        break;
+      cursor = cl_pids;
+      while (cursor != NULL) {
+        if (pid == cursor->pid) {
+          cursor->id = id;
+          break;
+        }
+        cursor = cursor->next;
       }
-      cursor = cursor->next;
-    }
-    pthread_mutex_unlock(&clients_mutex);
-    fprintf(stderr,
-            "Client [pid - %d] set id [id - %d(%d)]\n",
-            pid,
-            id,
-            cursor->id);
-    ++clients_available;
-  } else if (id > 0) {
-    fprintf(stderr, "Server [pid - %d] set id [id - %d]\n", pid, id);
-    pthread_mutex_lock(&clients_mutex);
+      pthread_mutex_unlock(&clients_mutex);
+      fprintf(stderr,
+              "Client [pid - %d] set id [id - %d(%d)]\n",
+              pid,
+              id,
+              cursor->id);
+      //    add_client(&cl_ids, pid, id, FALSE);
+      ++clients_available;
+    } else if (id > 0) {
+      fprintf(stderr, "Server [pid - %d] set id [id - %d]\n", pid, id);
+      pthread_mutex_lock(&clients_mutex);
 
-    while (cursor != NULL) {
-      if (pid == cursor->pid) {
-        cursor->id = id;
-        cursor->srv = TRUE;
-        break;
+      while (cursor != NULL) {
+        if (pid == cursor->pid) {
+          cursor->id = id;
+          cursor->srv = TRUE;
+          break;
+        }
+        cursor = cursor->next;
       }
-      cursor = cursor->next;
+      pthread_mutex_unlock(&clients_mutex);
     }
-    pthread_mutex_unlock(&clients_mutex);
   } else
     fprintf(stderr, "Ignore SIGUSR1 from [pid - %d]\n", pid);
 }
@@ -284,25 +293,80 @@ void *manager() {
   int game_id = -1;
   int id_f = -1;
   int id_s = -1;
+  pid_t pid_f = -1;
+  pid_t pid_s = -1;
   int fd = -1;
+  int id = -1;
   pid_t pid = -1;
   char str[20];
   clients_t *cursor = cl_pids;
+  games_t *game_cursor = game_pids;
   fprintf(stderr, "Start manager\n");
   while (!manager_join) {
     cursor = cl_pids;
+    if ((id = remove_client(&cl_pids, -2, &clients_mutex)) > 0) {
+      pthread_mutex_lock(&games_mutex);
+      game_cursor = game_pids;
+      while (game_cursor != NULL) {
+        if (id == game_cursor->player1) {
+          fprintf(stderr,
+                  "End of game [id: %d | win: %d | lose: %d]\n",
+                  game_cursor->id,
+                  game_cursor->player2,
+                  game_cursor->player1);
+          sprintf(str, "%d.pid", game_cursor->p_player1);
+          fd = open(str, O_WRONLY | O_CREAT, 0666);
+          sprintf(str, "%s %d\n", "looser", game_cursor->player1);
+          write(fd, str, strlen(str));
+          close(fd);
+          kill(game_cursor->p_player1, SIGUSR1);
+          sprintf(str, "%d.pid", game_cursor->p_player2);
+          fd = open(str, O_WRONLY | O_CREAT, 0666);
+          sprintf(str, "%s %d\n", "winner", game_cursor->player2);
+          write(fd, str, strlen(str));
+          close(fd);
+          kill(game_cursor->p_player2, SIGUSR1);
+          break;
+        } else if (id == game_cursor->player2) {
+          fprintf(stderr,
+                  "End of game [id: %d | win: %d | lose: %d]\n",
+                  game_cursor->id,
+                  game_cursor->player1,
+                  game_cursor->player2);
+          sprintf(str, "%d.pid", game_cursor->p_player2);
+          fd = open(str, O_WRONLY | O_CREAT, 0666);
+          sprintf(str, "%s %d\n", "looser", game_cursor->player2);
+          write(fd, str, strlen(str));
+          close(fd);
+          kill(game_cursor->p_player2, SIGUSR1);
+          sprintf(str, "%d.pid", game_cursor->p_player1);
+          fd = open(str, O_WRONLY | O_CREAT, 0666);
+          sprintf(str, "%s %d\n", "winner", game_cursor->player1);
+          write(fd, str, strlen(str));
+          close(fd);
+          kill(game_cursor->p_player1, SIGUSR1);
+          break;
+        } else {
+        }
+        game_cursor = game_cursor->next;
+      }
+      pthread_mutex_unlock(&games_mutex);
+      sleep(1);
+    }
     if (clients_available > 0 && !(clients_available % 2)) {
-      game_id = rand() % 50;
+      game_id = rand() % 500;
       // Place check game id here
       pthread_mutex_lock(&clients_mutex);
       while (cursor != NULL) {
         if (cursor->srv == FALSE && cursor->game == -1 &&
-            cursor->status == FALSE) {
+            cursor->status == FALSE && cursor->pid > 0) {
           if (id_f == -1) {
             id_f = cursor->id;
+            pid_f = cursor->pid;
             cursor->status = TRUE;
           } else if (id_s == -1) {
             id_s = cursor->id;
+            pid_s = cursor->pid;
             cursor->status = TRUE;
           } else
             break;
@@ -313,20 +377,24 @@ void *manager() {
         cursor = cursor->next;
       }
       pthread_mutex_unlock(&clients_mutex);
-      sleep(5);
       if (id_f > 0 && id_s > 0) {
-        //        clients_available -= 2;
+        clients_available -= 2;
         sprintf(str, "%d.game", game_id);
         fd = open(str, O_WRONLY | O_CREAT, 0666);
-        sprintf(str, "%d %d %d\n", this_server->number, id_f, id_s);
+        sprintf(str, "%d %d %d %s\n", this_server->number, id_f, id_s, field);
         write(fd, str, strlen(str));
         close(fd);
-        fprintf(stderr,
-                "Create game [id: %d | players_id: %d,%d]\n",
+        add_game(
+                &game_pids,
                 game_id,
                 id_f,
-                id_s);
+                id_s,
+                pid_f,
+                pid_s,
+                this_server->number,
+                &games_mutex);
       }
+      sleep(2);
     }
     id_s = -1;
     id_f = -1;
@@ -364,7 +432,7 @@ void client_connection() {
       fprintf(stderr, "Change client id [id - %d]\n", client_id);
       sprintf(str, "%d.pid", pid);
       pidfd = open(str, O_WRONLY | O_CREAT, 0666);
-      sprintf(str, "%d\n", client_id);
+      sprintf(str, "set_id\n%d\n", client_id);
       write(pidfd, str, strlen(str));
       close(pidfd);
       kill(mainpid, SIGUSR1);
@@ -381,7 +449,7 @@ void client_connection() {
         client_id = p.client_id;
         sprintf(str, "%d.pid", pid);
         pidfd = open(str, O_WRONLY | O_CREAT, 0666);
-        sprintf(str, "%d\n", client_id);
+        sprintf(str, "set_id\n%d\n", client_id);
         write(pidfd, str, strlen(str));
         close(pidfd);
         kill(mainpid, SIGUSR1);
@@ -396,7 +464,7 @@ void client_connection() {
         fprintf(stderr, "Respond connection from client[id - %d]\n", client_id);
         sprintf(str, "%d.pid", pid);
         pidfd = open(str, O_WRONLY | O_CREAT, 0666);
-        sprintf(str, "%d\n", client_id);
+        sprintf(str, "set_id\n%d\n", client_id);
         write(pidfd, str, strlen(str));
         close(pidfd);
         kill(mainpid, SIGUSR1);
@@ -497,7 +565,7 @@ int main(int argc, char **argv) {
       client_connection();
     } else {
       fprintf(stderr, "PID connection : %d\n", pid);
-      add_client(&cl_pids, pid, 0, FALSE);
+      add_client(&cl_pids, pid, 0, FALSE, &clients_mutex);
     }
     // Parent doesn.t need this
     close(client_socket_read);
@@ -587,7 +655,7 @@ void create_connections_to_servers() {
       server_connection(cursor);
     } else {
       fprintf(stderr, "[id: %d | pid: %d]\n", cursor->number, pids[i]);
-      add_client(&se_pids, pids[i], cursor->number, TRUE);
+      add_client(&se_pids, pids[i], cursor->number, TRUE, &servers_mutex);
     }
     cursor = cursor->next;
   }

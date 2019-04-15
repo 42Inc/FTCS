@@ -8,6 +8,8 @@ pthread_mutex_t reader_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t writer_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t helper_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t games_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t servers_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 int client_socket_read = -1;
 int client_socket_write = -1;
@@ -20,18 +22,51 @@ srv_pool_t *known_servers = NULL;
 char hostname[256] = "localhost";
 int port = PORT; /* PORT*/
 
+double wtime() {
+  struct timeval t;
+  gettimeofday(&t, NULL);
+  return (double)t.tv_sec + (double)t.tv_usec * 1E-6;
+}
+
 int create_file(clients_t *client) {
 }
 
 int remove_file(clients_t *client) {
 }
 
-void add_client(clients_t **root, pid_t pid, int id, int srv) {
+void check_timeout(clients_t **root) {
+}
+
+void add_game(games_t **root, pid_t id, int f, int s, pid_t pf, pid_t ps, int o, pthread_mutex_t *mutex) {
+  games_t *p;
+  p = (games_t *)malloc(sizeof(games_t));
+  pthread_mutex_lock(mutex);
+  if (p == NULL) {
+    pthread_mutex_unlock(mutex);
+    return;
+  }
+  p->id = id;
+  p->player1 = f;
+  p->player2 = s;
+  p->p_player1 = pf;
+  p->p_player2 = ps;
+  p->owner = o;
+  if (*root == NULL) {
+    *root = p;
+  } else {
+    p->next = *root;
+    *root = p;
+  }
+  fprintf(stderr, "Add game [id: %d | first: %d | second: %d | owner: %d] \n", p->id, p->player1, p->player2, p->owner);
+  pthread_mutex_unlock(mutex);
+}
+
+void add_client(clients_t **root, pid_t pid, int id, int srv, pthread_mutex_t *mutex) {
   clients_t *p;
   p = (clients_t *)malloc(sizeof(clients_t));
-  pthread_mutex_lock(&clients_mutex);
+  pthread_mutex_lock(mutex);
   if (p == NULL) {
-    pthread_mutex_unlock(&clients_mutex);
+    pthread_mutex_unlock(mutex);
     return;
   }
   p->pid = pid;
@@ -39,62 +74,99 @@ void add_client(clients_t **root, pid_t pid, int id, int srv) {
   p->srv = srv;
   p->game = -1;
   p->status = FALSE;
+  p->time = -1;
   if (*root == NULL) {
     *root = p;
   } else {
     p->next = *root;
     *root = p;
   }
-  pthread_mutex_unlock(&clients_mutex);
+  fprintf(stderr, "Add client [id: %d | pid: %d | srv: %d] \n", p->id, p->pid, p->srv);
+  pthread_mutex_unlock(mutex);
 }
 
-int disconnect_client(clients_t **root, pid_t pid) {
-  pthread_mutex_lock(&clients_mutex);
+int disconnect_client(clients_t **root, pid_t pid, pthread_mutex_t *mutex) {
+  pthread_mutex_lock(mutex);
   clients_t *p = *root;
   if (*root == NULL) {
-    pthread_mutex_unlock(&clients_mutex);
+    pthread_mutex_unlock(mutex);
     return -1;
   }
   while (p != NULL) {
     if (p->pid == pid) {
       p->pid = -1;
-      pthread_mutex_unlock(&clients_mutex);
+      p->time = wtime();
+      pthread_mutex_unlock(mutex);
       return p->id;
     }
     p = p->next;
   }
-  pthread_mutex_unlock(&clients_mutex);
+  pthread_mutex_unlock(mutex);
   return -1;
 }
 
-int remove_client(clients_t **root, pid_t pid) {
+int remove_client(clients_t **root, pid_t pid, pthread_mutex_t *mutex) {
   clients_t *prev = NULL;
   clients_t *p = *root;
-  pthread_mutex_lock(&clients_mutex);
+  int id = -1;
+  pthread_mutex_lock(mutex);
   if (*root == NULL) {
+//    fprintf(stderr, "Remove NULL\n");
+    pthread_mutex_unlock(mutex);
     return 1;
-    pthread_mutex_unlock(&clients_mutex);
   }
+  if (pid == -2) {
+    while (p != NULL) {
+      if (p->time > 0 && (wtime() - p->time) > TIMEOUT) {
+        fprintf(stderr, "Remove node [id: %d] TIMEOUT\n", p->id);
+        if (prev != NULL) {
+          prev->next = p->next;
+          id = p->id;
+          remove_file(p);
+          free(p);
+          pthread_mutex_unlock(mutex);
+//          fprintf(stderr, "Return id: %d\n", id);
+          return id;
+        } else {
+          *root = p->next;
+          id = p->id;
+          remove_file(p);
+          free(p);
+          pthread_mutex_unlock(mutex);
+//          fprintf(stderr, "Return id: %d\n", id);
+          return id;
+        }
+      }
+      prev = p;
+      p = p->next;
+    }
+    pthread_mutex_unlock(mutex);
+    return -1;
+  }
+  pthread_mutex_unlock(mutex);
+  prev = NULL;
+  p = *root;
+  pthread_mutex_lock(mutex);
   while (p != NULL) {
-    if (p->pid == pid || p->pid == -1) {
+    if (p->pid == pid) {
       if (prev != NULL) {
         prev->next = p->next;
         remove_file(p);
         free(p);
-        pthread_mutex_unlock(&clients_mutex);
+        pthread_mutex_unlock(mutex);
         return 0;
       } else {
         *root = p->next;
         remove_file(p);
         free(p);
-        pthread_mutex_unlock(&clients_mutex);
+        pthread_mutex_unlock(mutex);
         return 0;
       }
     }
     prev = p;
     p = p->next;
   }
-  pthread_mutex_unlock(&clients_mutex);
+  pthread_mutex_unlock(mutex);
 
   return 1;
 }
