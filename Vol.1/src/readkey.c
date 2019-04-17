@@ -17,14 +17,20 @@ int rk_readkey(enum keys *key, int echo) {
   char buf[16] = {0};
   int readNum = 0;
 
+  int poll_return;
+  struct pollfd pfd;
+  poll_return = 0;
+  pfd.events = POLLIN | POLLHUP | POLLRDNORM;
+  pfd.fd = STDIN_FILENO;
   if (tcgetattr(STDIN_FILENO, &orig_options) != 0) {
     return -1;
   }
   if (rk_mytermregime(0, 0, 1, echo, 1) != 0) {
     return -1;
   }
-  readNum = read(STDIN_FILENO, buf, 5);
-
+  if ((poll_return = poll(&pfd, 1, 100)) > 0) {
+    readNum = read(STDIN_FILENO, buf, 5);
+  }
   if (readNum <= 0) {
     return -1;
   }

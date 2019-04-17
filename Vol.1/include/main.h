@@ -16,6 +16,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ipc.h>
+#include <sys/msg.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -34,6 +36,9 @@
 #define GAME_IN_PROG 1
 #define TRUE 1
 #define FALSE 0
+#define GET_ID 1
+#define SET_ID 2
+#define NONE_CMD 100
 
 typedef enum type_packet {
   MSG = 0,
@@ -48,15 +53,14 @@ typedef enum type_packet {
   NONE = 100
 } type_packet_t;
 
-typedef struct client {
+typedef struct _ipc {
   pid_t pid;
+  key_t key;
   int id;
   int srv;
-  int game;
-  int status;
-  double time;
-  struct client *next;
-} clients_t;
+  int msqid;
+  struct _ipc *next;
+} ipc_t;
 
 typedef struct packet {
   enum type_packet type;
@@ -64,6 +68,11 @@ typedef struct packet {
   int client_id;
   char buffer[MAXDATASIZE];
 } packet_t;
+
+typedef struct msg {
+  long mtype;
+  char mtext[MAXDATASIZE];
+} message_t;
 
 typedef struct servers {
   int port;
@@ -99,6 +108,15 @@ typedef struct packet_queue_header {
   packet_queue_t *q;
 } packets_t;
 
+typedef struct client {
+  pid_t pid;
+  int id;
+  int srv;
+  int game;
+  int status;
+  double time;
+  struct client *next;
+} clients_t;
 packet_t
 make_packet(type_packet_t type, int client_id, int packet_id, char *buff);
 int send_packet(packet_t p);
@@ -119,9 +137,13 @@ int disconnect_client(clients_t **root, pid_t pid, pthread_mutex_t *mutex);
 int remove_client(clients_t **root, pid_t pid, pthread_mutex_t *mutex);
 void add_client(
         clients_t **root, pid_t pid, int id, int srv, pthread_mutex_t *mutex);
-
+ipc_t *get_msq_pid(ipc_t **root, int pid, pthread_mutex_t *msq_mutex);
+ipc_t *get_msq_id(ipc_t **root, int id, pthread_mutex_t *msq_mutex);
+int remove_msq(ipc_t **root, int pid, pthread_mutex_t *mutex);
+int add_msq(ipc_t **root, int pid, int server, pthread_mutex_t *mutex);
+void print_msq(ipc_t **root, pthread_mutex_t *mutex);
 void printBox();
-
+int getrand(int min, int max);
 void add_game(
         games_t **root,
         pid_t id,

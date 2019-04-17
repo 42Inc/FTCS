@@ -10,6 +10,7 @@ pthread_mutex_t helper_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t games_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t servers_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t msq_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 int client_socket_read = -1;
 int client_socket_write = -1;
@@ -27,11 +28,131 @@ double wtime() {
   gettimeofday(&t, NULL);
   return (double)t.tv_sec + (double)t.tv_usec * 1E-6;
 }
-/*---------------------------------------------------------------------------*/
-int create_file(char *client) {
+int getrand(int min, int max) {
+  return (double)rand() / (RAND_MAX + 1.0) * (max - min) + min;
 }
 /*---------------------------------------------------------------------------*/
-int remove_file(char *client) {
+void print_msq(ipc_t **root, pthread_mutex_t *mutex) {
+  ipc_t *p = *root;
+  pthread_mutex_lock(mutex);
+
+  fprintf(stderr, "/*-MSQ----------------*/\n");
+  while (p != NULL) {
+    fprintf(stderr,
+            "Add msq [id: %d | key: %d | fd: %d | ptr: %p -> %p | Server: %s] "
+            "\n",
+            p->pid,
+            p->key,
+            p->msqid,
+            p,
+            p->next,
+            p->srv ? "TRUE" : "FALSE");
+    p = p->next;
+  }
+  fprintf(stderr, "/*--------------------*/\n");
+  pthread_mutex_unlock(mutex);
+}
+/*---------------------------------------------------------------------------*/
+int add_msq(ipc_t **root, int pid, int server, pthread_mutex_t *mutex) {
+  ipc_t *p;
+  p = (ipc_t *)malloc(sizeof(ipc_t));
+  pthread_mutex_lock(mutex);
+  if (p == NULL) {
+    fprintf(stderr, "Malloc error [%s]\n", "add_msq");
+    pthread_mutex_unlock(mutex);
+    return 1;
+  }
+  p->pid = pid;
+  p->key = pid;
+  p->srv = server;
+  if ((p->msqid = msgget(p->key, IPC_CREAT | 0666)) < 0) {
+    perror("msgget");
+    pthread_mutex_unlock(mutex);
+    return 1;
+  }
+  if (*root == NULL) {
+    *root = p;
+  } else {
+    p->next = *root;
+    *root = p;
+  }
+  fprintf(stderr,
+          "Add msq [id: %d | key: %d | fd: %d | ptr: %p] \n",
+          p->pid,
+          p->key,
+          p->msqid,
+          p);
+  pthread_mutex_unlock(mutex);
+  print_msq(root, mutex);
+  return 0;
+}
+/*---------------------------------------------------------------------------*/
+ipc_t *get_msq_pid(ipc_t **root, int pid, pthread_mutex_t *mutex) {
+  ipc_t *p = *root;
+  pthread_mutex_lock(mutex);
+
+  while (p != NULL) {
+    if (p->pid == pid) {
+      pthread_mutex_unlock(mutex);
+      return p;
+    }
+    p = p->next;
+  }
+  pthread_mutex_unlock(mutex);
+
+  return NULL;
+}
+/*---------------------------------------------------------------------------*/
+ipc_t *get_msq_id(ipc_t **root, int id, pthread_mutex_t *mutex) {
+  ipc_t *p = *root;
+  pthread_mutex_lock(mutex);
+
+  while (p != NULL) {
+    if (p->id == id) {
+      pthread_mutex_unlock(mutex);
+      return p;
+    }
+    p = p->next;
+  }
+  pthread_mutex_unlock(mutex);
+
+  return NULL;
+}
+/*---------------------------------------------------------------------------*/
+int remove_msq(ipc_t **root, int pid, pthread_mutex_t *mutex) {
+  ipc_t *p = *root;
+  ipc_t *prev = NULL;
+  pthread_mutex_lock(mutex);
+  if (*root == NULL) {
+    pthread_mutex_unlock(mutex);
+    return 1;
+  }
+  prev = NULL;
+  p = *root;
+
+  fprintf(stderr, "Remove msq [id: %d] \n", pid);
+  while (p != NULL) {
+    if (p->pid == pid) {
+      if (prev != NULL) {
+        prev->next = p->next;
+        free(p);
+        pthread_mutex_unlock(mutex);
+        print_msq(root, mutex);
+        return 0;
+      } else {
+        *root = p->next;
+        free(p);
+        pthread_mutex_unlock(mutex);
+        print_msq(root, mutex);
+        return 0;
+      }
+    }
+    prev = p;
+    p = p->next;
+  }
+  pthread_mutex_unlock(mutex);
+  print_msq(root, mutex);
+  return 1;
 }
 /*---------------------------------------------------------------------------*/
 void add_game(
@@ -123,7 +244,6 @@ int disconnect_client(clients_t **root, pid_t pid, pthread_mutex_t *mutex) {
 int remove_game(games_t **root, pid_t id, pthread_mutex_t *mutex) {
   games_t *prev = NULL;
   games_t *p = *root;
-  char buff[20];
   pthread_mutex_lock(mutex);
   if (*root == NULL) {
     //    fprintf(stderr, "Remove NULL\n");
@@ -158,9 +278,7 @@ int remove_game(games_t **root, pid_t id, pthread_mutex_t *mutex) {
 int remove_client(clients_t **root, pid_t pid, pthread_mutex_t *mutex) {
   clients_t *prev = NULL;
   clients_t *p = *root;
-  clients_t *cursor = *root;
   int id = -1;
-  char buff[20];
   pthread_mutex_lock(mutex);
   if (*root == NULL) {
     //    fprintf(stderr, "Remove NULL\n");
@@ -343,9 +461,9 @@ make_packet(type_packet_t type, int client_id, int packet_id, char *buff) {
 /*---------------------------------------------------------------------------*/
 int send_ack(int client_id, int packet_id) {
   packet_t p = make_packet(CONN_ACK, client_id, packet_id, NULL);
-  int send_result = 0;
+
   pthread_mutex_lock(&connection_mutex);
-  send_result = send(client_socket_write, &p, sizeof(p), 0);
+  send(client_socket_write, &p, sizeof(p), 0);
   pthread_mutex_unlock(&connection_mutex);
   //  fprintf(stderr, "Send ack\n");
   return TRUE;

@@ -12,7 +12,7 @@ int mt_gotoXY(int x, int y) {
   int rows = 0;
   int cols = 0;
   mt_getscreensize(&rows, &cols);
-  if (((y < rows) & (y >= 0)) & ((x < cols) & (x >= 0))) {
+  if (((y < rows) && (y >= 0)) && ((x < cols) && (x >= 0))) {
     fprintf(stdout, "\E[%d;%dH", y, x);
     return 0;
   } else {
@@ -32,7 +32,7 @@ int mt_getscreensize(int *rows, int *cols) {
 }
 /*---------------------------------------------------------------------------*/
 int mt_setfgcolor(enum colors color) {
-  if (color >= 0 & color <= 9) {
+  if (color >= 0 && color <= 9) {
     fprintf(stdout, "\E[%dm", 30 + color);
     return 0;
   } else {
@@ -41,7 +41,7 @@ int mt_setfgcolor(enum colors color) {
 }
 /*---------------------------------------------------------------------------*/
 int mt_setbgcolor(enum colors color) {
-  if (color >= 0 & color <= 9) {
+  if (color >= 0 && color <= 9) {
     fprintf(stdout, "\E[%dm", 40 + color);
     return 0;
   } else {

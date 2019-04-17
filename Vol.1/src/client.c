@@ -39,7 +39,6 @@ void *client_reader() {
   struct pollfd pfd;
   packet_t p;
 
-client_reader_start:
   recv_result = 0;
   poll_return = 0;
   pfd.fd = client_socket_read;
@@ -76,11 +75,9 @@ client_reader_start:
 }
 /*---------------------------------------------------------------------------*/
 void *client_writer() {
-  int send_result;
   int trying_send;
   packet_t p;
-client_writer_start:
-  send_result = 0;
+
   trying_send = 0;
   while (1) {
     while (!check_connection()) {
@@ -93,7 +90,7 @@ client_writer_start:
     sending:
       if (p.type != NONE) {
         pthread_mutex_lock(&connection_mutex);
-        send_result = send(client_socket_write, &p, sizeof(packet_t), 0);
+        send(client_socket_write, &p, sizeof(packet_t), 0);
         pthread_mutex_unlock(&connection_mutex);
 
         if (p.type == CONN_ACK || wait_ack(p.packet_id)) {
@@ -115,7 +112,7 @@ client_writer_start:
 /*---------------------------------------------------------------------------*/
 void printInt() {
   int i = 0;
-  mt_clrscr();
+  //  mt_clrscr();
   for (i = 0; i < 9; i++) {
     printf("%c", field[i]);
     if ((i + 1) % 3 == 0)
@@ -158,9 +155,7 @@ void restoreEchoRegime() {
 }
 /*---------------------------------------------------------------------------*/
 int main(int argc, char **argv) {
-  int server_counts = 0;
   int index = 0;
-  FILE *in_descriptor = NULL;
   pthread_t reader_tid = -1;
   pthread_t writer_tid = -1;
   pthread_attr_t reader_attr;
@@ -170,7 +165,7 @@ int main(int argc, char **argv) {
   char chat_buffer[MAXDATASIZE];
   char buff[20];
   char chat_sym = -1;
-  char chat_index = 0;
+  int chat_index = 0;
   short int cursor_x = 0;
   short int cursor_y = 0;
   enum keys key = KEY_other;
@@ -252,11 +247,13 @@ int main(int argc, char **argv) {
           case KEY_esc:
             chat_mode = TRUE;
             refresh = TRUE;
+            key = KEY_other;
             break;
           case KEY_enter:
             sprintf(buff, "%d", cursor_y * 3 + cursor_x);
             send_packet(make_packet(CHANGE_FIELD, client_id, 0, buff));
             refresh = TRUE;
+            key = KEY_other;
             break;
           default:
             break;
@@ -269,12 +266,14 @@ int main(int argc, char **argv) {
           case KEY_esc:
             chat_mode = FALSE;
             refresh = TRUE;
+            key = KEY_other;
             break;
           case KEY_enter:
             chat_buffer[chat_index] = '\0';
             send_packet(make_packet(MSG, client_id, 0, chat_buffer));
             chat_index = 0;
             refresh = TRUE;
+            key = KEY_other;
             break;
           case KEY_alpha:
             if (chat_index < MAXDATASIZE - 1 && chat_sym != -1) {
@@ -282,26 +281,27 @@ int main(int argc, char **argv) {
               if (chat_index == MAXDATASIZE - 1)
                 chat_buffer[chat_index] = '\0';
             }
+            key = KEY_other;
             break;
           default:
             break;
           }
         }
-        send_packet(make_packet(SERVICE, client_id, 0, NULL));
+        send_packet(make_packet(SERVICE, client_id, 0, "Check"));
         if (get_packet(&p) == TRUE) {
           if (p.type == SERVICE) {
             if (!strcmp(p.buffer, "set_id")) {
               client_id = p.client_id;
-              mt_gotoXY(1, 8);
+              //              mt_gotoXY(1, 8);
               fprintf(stderr, "Change client id [id: %d]\n", client_id);
             } else if (!strcmp(p.buffer, "winner")) {
-              mt_gotoXY(1, 8);
+              //              mt_gotoXY(1, 8);
               fprintf(stdout, "You win!:)\n");
               game_state = FALSE;
               state_connection = FALSE;
               break;
             } else if (!strcmp(p.buffer, "looser")) {
-              mt_gotoXY(1, 8);
+              //              mt_gotoXY(1, 8);
               fprintf(stdout, "You Lose!:(\n");
               game_state = FALSE;
               state_connection = FALSE;
@@ -315,8 +315,6 @@ int main(int argc, char **argv) {
           }
           refresh = TRUE;
         }
-        //        sleep(2);
-        // Place course work here
       }
 
       if (game_state) {
@@ -324,19 +322,15 @@ int main(int argc, char **argv) {
         pthread_mutex_lock(&connection_mutex);
         state_connection = CONN_FALSE;
         pthread_mutex_unlock(&connection_mutex);
-        //        fprintf(stderr, "Connection drop. Trying reconnect.\n");
         close(client_socket_write);
         close(client_socket_read);
         client_socket_write = -1;
         client_socket_read = -1;
 
-        //        fprintf(stderr, "Reload config file\n");
         cursor = known_servers->srvs;
         pthread_mutex_lock(&connection_mutex);
         state_connection = reconnection();
         pthread_mutex_unlock(&connection_mutex);
-        //        if (check_connection())
-        //          fprintf(stderr, "Reconnect!\n");
       } else {
         // End of game
         break;

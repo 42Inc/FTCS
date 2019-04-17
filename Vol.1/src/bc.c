@@ -19,7 +19,6 @@ int bc_box(int x1, int y1, int x2, int y2) {
   int maxx = 0;
   int maxy = 0;
   int i = 0;
-  int j = 0;
 
   if (x1 > x2) {
     swap(&x1, &x2);

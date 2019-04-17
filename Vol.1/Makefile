@@ -1,6 +1,6 @@
 CC := gcc
 STD := -std=gnu11
-DEBUG := -g3
+DEBUG := -g3 -Wall
 SERVER := server
 CLIENT := client
 LIB_PATH := ./lib
