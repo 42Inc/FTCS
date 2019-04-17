@@ -2,6 +2,7 @@
 
 int game_state = !GAME_IN_PROG;
 int reconnect = TRUE;
+int refresh = TRUE;
 int disconnect = FALSE;
 extern char hostname[MAXDATASIZE];
 extern int port;
@@ -21,10 +22,17 @@ extern pthread_mutex_t reader_mutex;
 extern pthread_mutex_t writer_mutex;
 extern pthread_mutex_t helper_mutex;
 extern srv_pool_t *known_servers;
-
+int echoIgn = 0;
+char field[10] = "AAAAAAAAA";
+static int symX[2] = {405029505, 2168595480};
+static int symO[2] = {2172748158, 2122416513};
+static int symA[2] = {0, 0};
 int client_id = -1;
 int game_id = -1;
+int chat_mode = FALSE;
 
+static struct termios originalTerm;
+/*---------------------------------------------------------------------------*/
 void *client_reader() {
   int recv_result;
   int poll_return;
@@ -66,7 +74,7 @@ client_reader_start:
     }
   }
 }
-
+/*---------------------------------------------------------------------------*/
 void *client_writer() {
   int send_result;
   int trying_send;
@@ -104,10 +112,51 @@ client_writer_start:
     pthread_mutex_unlock(&writer_mutex);
   }
 }
-
-void connection() {
+/*---------------------------------------------------------------------------*/
+void printInt() {
+  int i = 0;
+  mt_clrscr();
+  for (i = 0; i < 9; i++) {
+    printf("%c", field[i]);
+    if ((i + 1) % 3 == 0)
+      printf("\n");
+  }
+  //  printBox();
 }
-
+/*---------------------------------------------------------------------------*/
+void printBox() {
+  bc_box(1, 1, 10, 10);
+  bc_box(11, 1, 20, 10);
+  bc_box(21, 1, 30, 10);
+  bc_box(1, 11, 10, 20);
+  bc_box(11, 11, 20, 20);
+  bc_box(21, 11, 30, 20);
+  bc_box(1, 21, 10, 30);
+  bc_box(11, 21, 20, 30);
+  bc_box(21, 21, 30, 30);
+}
+/*---------------------------------------------------------------------------*/
+void setEchoRegime() {
+  if (echoIgn == 0) {
+    while (tcgetattr(STDIN_FILENO, &originalTerm) != 0)
+      ;
+    rk_mytermregime(0, 0, 1, 1, 1);
+    echoIgn = 1;
+  } else {
+    return;
+  }
+}
+/*---------------------------------------------------------------------------*/
+void restoreEchoRegime() {
+  if (echoIgn == 1) {
+    while (tcsetattr(STDIN_FILENO, TCSANOW, &originalTerm) != 0)
+      ;
+    echoIgn = 0;
+  } else {
+    return;
+  }
+}
+/*---------------------------------------------------------------------------*/
 int main(int argc, char **argv) {
   int server_counts = 0;
   int index = 0;
@@ -118,10 +167,20 @@ int main(int argc, char **argv) {
   pthread_attr_t writer_attr;
   srv_t *cursor = NULL;
   packet_t p;
+  char chat_buffer[MAXDATASIZE];
+  char buff[20];
+  char chat_sym = -1;
+  char chat_index = 0;
+  short int cursor_x = 0;
+  short int cursor_y = 0;
+  enum keys key = KEY_other;
+
   reader_buffer = (packets_t *)malloc(sizeof(packets_t));
   writer_buffer = (packets_t *)malloc(sizeof(packets_t));
   memset(reader_buffer, 0, sizeof(packets_t));
   memset(writer_buffer, 0, sizeof(packets_t));
+  rk_mytermsave();
+  mt_clrscr();
   while (1) {
     if (!check_connection()) {
       if (known_servers == NULL) {
@@ -133,7 +192,7 @@ int main(int argc, char **argv) {
       if ((gethostname(cursor->ip, sizeof(cursor->ip))) == 0) {
         hostIP = gethostbyname(cursor->ip);
       } else {
-        fprintf(stderr, "ERROR: - IP Address not found.");
+        fprintf(stderr, "ERROR: IP Address not found.");
         exit(EXIT_FAILURE);
       }
       // connection mutex
@@ -182,26 +241,81 @@ int main(int argc, char **argv) {
       if (state_connection == CONN_TRUE)
         fprintf(stdout, "Connection established. Client ID : %d\n", client_id);
       while (check_connection()) {
+        if (refresh == TRUE) {
+          printInt();
+          refresh = FALSE;
+        }
+        if (!chat_mode) {
+          rk_readkey(&key, FALSE);
+          chat_sym = -1;
+          switch (key) {
+          case KEY_esc:
+            chat_mode = TRUE;
+            refresh = TRUE;
+            break;
+          case KEY_enter:
+            sprintf(buff, "%d", cursor_y * 3 + cursor_x);
+            send_packet(make_packet(CHANGE_FIELD, client_id, 0, buff));
+            refresh = TRUE;
+            break;
+          default:
+            break;
+          }
+        } else {
+          setEchoRegime();
+          chat_sym = rk_readkey(&key, TRUE);
+          restoreEchoRegime();
+          switch (key) {
+          case KEY_esc:
+            chat_mode = FALSE;
+            refresh = TRUE;
+            break;
+          case KEY_enter:
+            chat_buffer[chat_index] = '\0';
+            send_packet(make_packet(MSG, client_id, 0, chat_buffer));
+            chat_index = 0;
+            refresh = TRUE;
+            break;
+          case KEY_alpha:
+            if (chat_index < MAXDATASIZE - 1 && chat_sym != -1) {
+              chat_buffer[chat_index++] = chat_sym;
+              if (chat_index == MAXDATASIZE - 1)
+                chat_buffer[chat_index] = '\0';
+            }
+            break;
+          default:
+            break;
+          }
+        }
         send_packet(make_packet(SERVICE, client_id, 0, NULL));
         if (get_packet(&p) == TRUE) {
           if (p.type == SERVICE) {
-            if (!strcmp(p.buffer, "set_id")){
+            if (!strcmp(p.buffer, "set_id")) {
               client_id = p.client_id;
+              mt_gotoXY(1, 8);
               fprintf(stderr, "Change client id [id: %d]\n", client_id);
             } else if (!strcmp(p.buffer, "winner")) {
+              mt_gotoXY(1, 8);
               fprintf(stdout, "You win!:)\n");
               game_state = FALSE;
               state_connection = FALSE;
               break;
             } else if (!strcmp(p.buffer, "looser")) {
+              mt_gotoXY(1, 8);
               fprintf(stdout, "You Lose!:(\n");
               game_state = FALSE;
               state_connection = FALSE;
               break;
+            } else {
             }
+          } else if (p.type == CHANGE_FIELD) {
+            strcpy(field, p.buffer);
+          } else if (p.type == MSG) {
+            //            strcpy(p.buffer, field);
           }
+          refresh = TRUE;
         }
-        sleep(2);
+        //        sleep(2);
         // Place course work here
       }
 
@@ -244,7 +358,7 @@ int main(int argc, char **argv) {
   close(client_socket_read);
   return 0;
 }
-
+/*---------------------------------------------------------------------------*/
 int reconnection() {
   int trying_reconnect = 0;
 
@@ -257,3 +371,4 @@ int reconnection() {
   }
   return CONN_FALSE;
 }
+/*---------------------------------------------------------------------------*/

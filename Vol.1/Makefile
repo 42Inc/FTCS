@@ -11,8 +11,8 @@ INC_PATH = ./include
 INC := $(INC_PATH)/main.h
 CFLAGS := $(DEBUG) $(STD) -pthread -O0
 
-OBJ_CLIENT := $(OBJ_PATH)/$(CLIENT).o $(OBJ_PATH)/helper.o
-OBJ_SERVER := $(OBJ_PATH)/$(SERVER).o $(OBJ_PATH)/helper.o
+OBJ_CLIENT := $(OBJ_PATH)/$(CLIENT).o $(OBJ_PATH)/helper.o $(OBJ_PATH)/bc.o $(OBJ_PATH)/term.o $(OBJ_PATH)/readkey.o
+OBJ_SERVER := $(OBJ_PATH)/$(SERVER).o $(OBJ_PATH)/helper.o $(OBJ_PATH)/bc.o $(OBJ_PATH)/term.o $(OBJ_PATH)/readkey.o
 .PHONY: all GRADUATION_PROJECT COMPILE_C clean restruct
 
 all: FORMAT DIRECTORY GRADUATION_PROJECT
@@ -42,6 +42,15 @@ $(OBJ_PATH)/$(SERVER).o: $(INC) $(SRC_PATH)/$(SERVER).c
 
 $(OBJ_PATH)/$(CLIENT).o: $(INC) $(SRC_PATH)/$(CLIENT).c
 	$(CC) -c $(SRC_PATH)/$(CLIENT).c -o $(OBJ_PATH)/$(CLIENT).o $(CFLAGS)
+
+$(OBJ_PATH)/bc.o: $(INC) $(SRC_PATH)/bc.c
+	$(CC) -c $(SRC_PATH)/bc.c -o $(OBJ_PATH)/bc.o $(CFLAGS)
+
+$(OBJ_PATH)/readkey.o: $(INC) $(SRC_PATH)/readkey.c
+	$(CC) -c $(SRC_PATH)/readkey.c -o $(OBJ_PATH)/readkey.o $(CFLAGS)
+
+$(OBJ_PATH)/term.o: $(INC) $(SRC_PATH)/term.c
+	$(CC) -c $(SRC_PATH)/term.c -o $(OBJ_PATH)/term.o $(CFLAGS)
 
 $(OBJ_PATH)/helper.o: $(INC) $(SRC_PATH)/helper.c
 	$(CC) -c $(SRC_PATH)/helper.c -o $(OBJ_PATH)/helper.o $(CFLAGS)

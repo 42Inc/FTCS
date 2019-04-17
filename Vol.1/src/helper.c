@@ -27,17 +27,22 @@ double wtime() {
   gettimeofday(&t, NULL);
   return (double)t.tv_sec + (double)t.tv_usec * 1E-6;
 }
-
-int create_file(clients_t *client) {
+/*---------------------------------------------------------------------------*/
+int create_file(char *client) {
 }
-
-int remove_file(clients_t *client) {
+/*---------------------------------------------------------------------------*/
+int remove_file(char *client) {
 }
-
-void check_timeout(clients_t **root) {
-}
-
-void add_game(games_t **root, pid_t id, int f, int s, pid_t pf, pid_t ps, int o, pthread_mutex_t *mutex) {
+/*---------------------------------------------------------------------------*/
+void add_game(
+        games_t **root,
+        pid_t id,
+        int f,
+        int s,
+        pid_t pf,
+        pid_t ps,
+        int o,
+        pthread_mutex_t *mutex) {
   games_t *p;
   p = (games_t *)malloc(sizeof(games_t));
   pthread_mutex_lock(mutex);
@@ -57,11 +62,17 @@ void add_game(games_t **root, pid_t id, int f, int s, pid_t pf, pid_t ps, int o,
     p->next = *root;
     *root = p;
   }
-  fprintf(stderr, "Add game [id: %d | first: %d | second: %d | owner: %d] \n", p->id, p->player1, p->player2, p->owner);
+  fprintf(stderr,
+          "Add game [id: %d | first: %d | second: %d | owner: %d] \n",
+          p->id,
+          p->player1,
+          p->player2,
+          p->owner);
   pthread_mutex_unlock(mutex);
 }
-
-void add_client(clients_t **root, pid_t pid, int id, int srv, pthread_mutex_t *mutex) {
+/*---------------------------------------------------------------------------*/
+void add_client(
+        clients_t **root, pid_t pid, int id, int srv, pthread_mutex_t *mutex) {
   clients_t *p;
   p = (clients_t *)malloc(sizeof(clients_t));
   pthread_mutex_lock(mutex);
@@ -81,10 +92,14 @@ void add_client(clients_t **root, pid_t pid, int id, int srv, pthread_mutex_t *m
     p->next = *root;
     *root = p;
   }
-  fprintf(stderr, "Add client [id: %d | pid: %d | srv: %d] \n", p->id, p->pid, p->srv);
+  fprintf(stderr,
+          "Add client [id: %d | pid: %d | srv: %d] \n",
+          p->id,
+          p->pid,
+          p->srv);
   pthread_mutex_unlock(mutex);
 }
-
+/*---------------------------------------------------------------------------*/
 int disconnect_client(clients_t **root, pid_t pid, pthread_mutex_t *mutex) {
   pthread_mutex_lock(mutex);
   clients_t *p = *root;
@@ -104,16 +119,53 @@ int disconnect_client(clients_t **root, pid_t pid, pthread_mutex_t *mutex) {
   pthread_mutex_unlock(mutex);
   return -1;
 }
-
+/*----------------------------------------------------------------------------*/
+int remove_game(games_t **root, pid_t id, pthread_mutex_t *mutex) {
+  games_t *prev = NULL;
+  games_t *p = *root;
+  char buff[20];
+  pthread_mutex_lock(mutex);
+  if (*root == NULL) {
+    //    fprintf(stderr, "Remove NULL\n");
+    pthread_mutex_unlock(mutex);
+    return 1;
+  }
+  pthread_mutex_unlock(mutex);
+  prev = NULL;
+  p = *root;
+  pthread_mutex_lock(mutex);
+  while (p != NULL) {
+    if (p->id == id) {
+      if (prev != NULL) {
+        prev->next = p->next;
+        free(p);
+        pthread_mutex_unlock(mutex);
+        return 0;
+      } else {
+        *root = p->next;
+        free(p);
+        pthread_mutex_unlock(mutex);
+        return 0;
+      }
+    }
+    prev = p;
+    p = p->next;
+  }
+  pthread_mutex_unlock(mutex);
+  return 1;
+}
+/*---------------------------------------------------------------------------*/
 int remove_client(clients_t **root, pid_t pid, pthread_mutex_t *mutex) {
   clients_t *prev = NULL;
   clients_t *p = *root;
+  clients_t *cursor = *root;
   int id = -1;
+  char buff[20];
   pthread_mutex_lock(mutex);
   if (*root == NULL) {
-//    fprintf(stderr, "Remove NULL\n");
+    //    fprintf(stderr, "Remove NULL\n");
     pthread_mutex_unlock(mutex);
-    return 1;
+    return -1;
   }
   if (pid == -2) {
     while (p != NULL) {
@@ -122,18 +174,16 @@ int remove_client(clients_t **root, pid_t pid, pthread_mutex_t *mutex) {
         if (prev != NULL) {
           prev->next = p->next;
           id = p->id;
-          remove_file(p);
           free(p);
           pthread_mutex_unlock(mutex);
-//          fprintf(stderr, "Return id: %d\n", id);
+          //          fprintf(stderr, "Return id: %d\n", id);
           return id;
         } else {
           *root = p->next;
           id = p->id;
-          remove_file(p);
           free(p);
           pthread_mutex_unlock(mutex);
-//          fprintf(stderr, "Return id: %d\n", id);
+          //          fprintf(stderr, "Return id: %d\n", id);
           return id;
         }
       }
@@ -151,13 +201,11 @@ int remove_client(clients_t **root, pid_t pid, pthread_mutex_t *mutex) {
     if (p->pid == pid) {
       if (prev != NULL) {
         prev->next = p->next;
-        remove_file(p);
         free(p);
         pthread_mutex_unlock(mutex);
         return 0;
       } else {
         *root = p->next;
-        remove_file(p);
         free(p);
         pthread_mutex_unlock(mutex);
         return 0;
@@ -170,7 +218,7 @@ int remove_client(clients_t **root, pid_t pid, pthread_mutex_t *mutex) {
 
   return 1;
 }
-
+/*---------------------------------------------------------------------------*/
 int client_tcp_connect(struct hostent *ip, int port) {
   int sock;
   struct sockaddr_in client;
@@ -191,7 +239,7 @@ int client_tcp_connect(struct hostent *ip, int port) {
 
   return sock;
 }
-
+/*---------------------------------------------------------------------------*/
 int read_servers_pool(char *filename) {
   FILE *fd = fopen(filename, "r");
   int i = 0;
@@ -234,7 +282,7 @@ int read_servers_pool(char *filename) {
   fclose(fd);
   return 0;
 }
-
+/*---------------------------------------------------------------------------*/
 void push_queue(packet_t p, packets_t **queue) {
   if (*queue == NULL) {
     *queue = (packets_t *)malloc(sizeof(packets_t));
@@ -261,7 +309,7 @@ void push_queue(packet_t p, packets_t **queue) {
   }
   //  fprintf(stderr, "Push[%lu]!\n", (*queue)->len);
 }
-
+/*---------------------------------------------------------------------------*/
 packet_t pop_queue(packets_t **queue) {
   packet_t p = make_packet(NONE, 0, 0, NULL);
   if (*queue == NULL) {
@@ -278,7 +326,7 @@ packet_t pop_queue(packets_t **queue) {
   //  fprintf(stderr, "Pop[%lu]!\n", (*queue)->len);
   return p;
 }
-
+/*---------------------------------------------------------------------------*/
 packet_t
 make_packet(type_packet_t type, int client_id, int packet_id, char *buff) {
   packet_t p;
@@ -292,7 +340,7 @@ make_packet(type_packet_t type, int client_id, int packet_id, char *buff) {
   }
   return p;
 }
-
+/*---------------------------------------------------------------------------*/
 int send_ack(int client_id, int packet_id) {
   packet_t p = make_packet(CONN_ACK, client_id, packet_id, NULL);
   int send_result = 0;
@@ -302,7 +350,7 @@ int send_ack(int client_id, int packet_id) {
   //  fprintf(stderr, "Send ack\n");
   return TRUE;
 }
-
+/*---------------------------------------------------------------------------*/
 int wait_ack(int packet_id) {
   long int duration = 1000000000;
   //  fprintf(stderr, "Wait ack\n");
@@ -315,14 +363,14 @@ int wait_ack(int packet_id) {
   }
   return FALSE;
 }
-
+/*---------------------------------------------------------------------------*/
 int send_packet(packet_t p) {
   pthread_mutex_lock(&writer_mutex);
   push_queue(p, &writer_buffer);
   pthread_mutex_unlock(&writer_mutex);
   return TRUE;
 }
-
+/*---------------------------------------------------------------------------*/
 int get_packet(packet_t *p) {
   pthread_mutex_lock(&reader_mutex);
   if (reader_buffer->len > 0) {
@@ -333,7 +381,8 @@ int get_packet(packet_t *p) {
   pthread_mutex_unlock(&reader_mutex);
   return FALSE;
 }
-
+/*---------------------------------------------------------------------------*/
 int check_connection() {
   return state_connection;
 }
+/*---------------------------------------------------------------------------*/

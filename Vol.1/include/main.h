@@ -1,6 +1,9 @@
 #ifndef MAIN_H
 #define MAIN_H
 
+#include "./bc.h"
+#include "./readkey.h"
+#include "./term.h"
 #include <arpa/inet.h>
 #include <assert.h>
 #include <errno.h>
@@ -111,11 +114,13 @@ void create_connections_to_servers();
 void remove_this_server_from_list();
 int client_tcp_connect(struct hostent *ip, int port);
 void server_connection(srv_t *cursor);
-
+int remove_game(games_t **root, pid_t id, pthread_mutex_t *mutex);
 int disconnect_client(clients_t **root, pid_t pid, pthread_mutex_t *mutex);
 int remove_client(clients_t **root, pid_t pid, pthread_mutex_t *mutex);
 void add_client(
         clients_t **root, pid_t pid, int id, int srv, pthread_mutex_t *mutex);
+
+void printBox();
 
 void add_game(
         games_t **root,
