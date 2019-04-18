@@ -13,9 +13,10 @@ CFLAGS := $(DEBUG) $(STD) -pthread -O0
 
 OBJ_CLIENT := $(OBJ_PATH)/$(CLIENT).o $(OBJ_PATH)/helper.o $(OBJ_PATH)/bc.o $(OBJ_PATH)/term.o $(OBJ_PATH)/readkey.o
 OBJ_SERVER := $(OBJ_PATH)/$(SERVER).o $(OBJ_PATH)/helper.o $(OBJ_PATH)/bc.o $(OBJ_PATH)/term.o $(OBJ_PATH)/readkey.o
-.PHONY: all GRADUATION_PROJECT COMPILE_C clean restruct
+.PHONY: all PROJECT CE SE clean restruct
 
-all: FORMAT DIRECTORY GRADUATION_PROJECT
+all: FORMAT DIRECTORY PROJECT
+	ulimit -c unlimited
 FORMAT:
 	clang-format -i $(INC_PATH)/*.h
 	clang-format -i $(SRC_PATH)/*.c
@@ -29,7 +30,7 @@ $(OBJ_PATH):
 $(BIN_PATH):
 	$(if ifeq test -d "$(BIN_PATH)" 0, @mkdir -p $(BIN_PATH))
 
-GRADUATION_PROJECT: CL SE
+PROJECT: CL SE
 
 SE: $(OBJ_SERVER)
 	$(CC) $(OBJ_SERVER) -o $(BIN_PATH)/$(SERVER) $(CFLAGS)
@@ -62,6 +63,8 @@ clean:
 	rm -rf $(OBJ_PATH) $(BIN_PATH)
 	rm -f *.game
 	rm -f *.pid
+	rm -f core
+	rm -f termsettings
 
 restruct:
 	make clean

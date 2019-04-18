@@ -10,23 +10,24 @@ extern int state_connection;
 extern packets_t *reader_buffer;
 extern packets_t *writer_buffer;
 extern int ack_id;
+extern int games_curr;
 extern pthread_mutex_t connection_mutex;
 extern pthread_mutex_t reader_mutex;
 extern pthread_mutex_t msq_mutex;
 extern pthread_mutex_t writer_mutex;
-extern pthread_mutex_t helper_mutex;
-extern pthread_mutex_t clients_mutex;
-extern pthread_mutex_t servers_mutex;
 extern pthread_mutex_t games_mutex;
+extern pthread_mutex_t clients_av_mutex;
 extern srv_pool_t *known_servers;
+
 struct sigaction child;
 sigset_t setchild;
 struct sigaction usr1;
 sigset_t setusr1;
 struct sigaction usr2;
 sigset_t setusr2;
+
+int msqid = -1;
 int games = GAMES;
-pid_t *pids = NULL;
 int server_socket_read = -1;
 int server_socket_write = -1;
 pid_t mainpid = -1;
@@ -39,29 +40,75 @@ games_t *chumbers = NULL;
 char field[10] = "AAAAAAAAA";
 pthread_mutex_t mut = PTHREAD_MUTEX_INITIALIZER;
 long int clients_available = 0;
+long int clients = 0;
 int manager_join = 0;
 int regenerate_client_id = FALSE;
-games_t *game_pids = NULL;
+games_t *game_ch = NULL;
 message_t sbuf;
 message_t rbuf;
+int sincronize_queue[GAMES];
+int sincronize_queue_i = 0;
 /*---------------------------------------------------------------------------*/
 void sigchld_handler(int s, siginfo_t *info, void *param) {
   pid_t pid = info->si_pid;
   int sid = -1;
   int id = -1;
-  ipc_t *p;
+  ipc_t *p = NULL;
+  games_t *g = NULL;
   pthread_mutex_lock(&mut);
   if (pid > 0) {
-    p = get_msq_pid(&msq, pid, &msq_mutex);
+    p = get_msq_pid(&msq, pid, FALSE, &msq_mutex);
     if (p == NULL)
       fprintf(stderr, "Ignore SIGCHLD [pid: %d] [%d %d]\n", pid, sid, id);
     else {
+      pthread_mutex_lock(&clients_av_mutex);
       clients_available =
               (clients_available - 1) < 0 ? 0 : (clients_available - 1);
+      clients = (clients - 1) < 0 ? 0 : (clients - 1);
+      pthread_mutex_unlock(&clients_av_mutex);
       fprintf(stderr,
-              "Respond SIGCHLD [pid: %d | clients: %ld]\n",
+              "Respond SIGCHLD [pid: %d | clients: %ld(%ld)]\n",
               pid,
-              clients_available);
+              clients_available,
+              clients);
+      if (p->game > 0) {
+        g = get_game_id(&game_ch, p->game, &games_mutex);
+        if (g != NULL) {
+          if (pid == g->player1->pid) {
+            // Win player2
+            sbuf.mtype = WIN_END_GAME;
+            sprintf(sbuf.mtext, "win");
+            msgsnd(g->player2->msqid, &sbuf, MAXDATASIZE, IPC_NOWAIT);
+            fprintf(stderr,
+                    "Send msg [fd: %d | msg: %s]\n",
+                    g->player2->msqid,
+                    sbuf.mtext);
+            kill(g->player2->pid, SIGUSR1);
+            remove_game(
+                    &game_ch,
+                    g->id,
+                    g->player2->id,
+                    g->player1->id,
+                    &games_mutex);
+          } else {
+            // Win player1
+            sbuf.mtype = WIN_END_GAME;
+            sprintf(sbuf.mtext, "win");
+            msgsnd(g->player1->msqid, &sbuf, MAXDATASIZE, IPC_NOWAIT);
+            fprintf(stderr,
+                    "Send msg [fd: %d | msg: %s]\n",
+                    g->player1->msqid,
+                    sbuf.mtext);
+            kill(g->player1->pid, SIGUSR1);
+            remove_game(
+                    &game_ch,
+                    g->id,
+                    g->player1->id,
+                    g->player2->id,
+                    &games_mutex);
+          }
+        }
+      }
       remove_msq(&msq, pid, &msq_mutex);
     }
   }
@@ -71,30 +118,90 @@ void sigchld_handler(int s, siginfo_t *info, void *param) {
 void sigusr1_handler(int s, siginfo_t *info, void *param) {
   pid_t pid = info->si_pid;
   int id = -1;
-  ipc_t *p;
-  ipc_t *ptr;
-
-  fprintf(stderr, "Respond SIGUSR1 [pid: %d | target: %d]\n", pid, getpid());
+  int fd = -1;
+  ipc_t *p = NULL;
+  ipc_t *ptr = NULL;
+  char buffer[MAXDATASIZE];
+  fprintf(stderr,
+          "Respond SIGUSR1 [pid: %d | target: %d | main: %d]\n",
+          pid,
+          getpid(),
+          mainpid);
   if (pid == mainpid) {
+    msgrcv(msqid, &rbuf, sizeof(message_t), 0, 0);
+    fprintf(stderr,
+            "Receive msg [fd: %d | msg: %s | type: %ld]\n",
+            msqid,
+            rbuf.mtext,
+            rbuf.mtype);
+    if (rbuf.mtype == WIN_END_GAME) {
+      fprintf(stderr, "Server send win [id: %d]\n", msqid);
+      send_packet(make_packet(SERVICE, id, 0, "winner"));
+    } else if (rbuf.mtype == SINCHRONIZE_GAME) {
+      fprintf(stderr,
+              "Request for sinchronisation [pid: %d | id: %d | state: %d]\n",
+              getpid(),
+              atoi(rbuf.mtext),
+              check_connection());
+      if (check_connection()) {
+        sprintf(buffer, "%d.game", atoi(rbuf.mtext));
+        fd = open(buffer, O_RDONLY);
+        read(fd, buffer, sizeof(int) * 5 + strlen("AAAAAAAAA") + 1);
+        close(fd);
+        send_packet(make_packet(
+                SINCHRONIZE, this_server->number, atoi(rbuf.mtext), buffer));
+        fprintf(stderr,
+                "Sinchronize! [pid: %d | id: %d]\n",
+                getpid(),
+                atoi(rbuf.mtext));
+      } else {
+        fprintf(stderr,
+                "Reject! [pid: %d | id: %d]\n",
+                getpid(),
+                atoi(rbuf.mtext));
+      }
+    }
   } else {
-    p = get_msq_pid(&msq, pid, &msq_mutex);
-    msgrcv(p->msqid, &rbuf, sizeof(message_t), NONE_CMD, 0);
-    fprintf(stderr, "Receive msg [fd: %d | msg: %s]\n", p->msqid, rbuf.mtext);
-    while (TRUE) {
-      id = getrand(known_servers->count + 1, known_servers->count + 21);
-      ptr = get_msq_id(&msq, id, &msq_mutex);
-      fprintf(stderr, "Check [id: %d | ptr: %p]\n", id, ptr);
-      if (!ptr)
-        break;
+    p = get_msq_pid(&msq, pid, FALSE, &msq_mutex);
+    msgrcv(p->msqid, &rbuf, sizeof(message_t), 0, 0);
+    fprintf(stderr,
+            "Receive msg [fd: %d | msg: %s | type: %ld]\n",
+            p->msqid,
+            rbuf.mtext,
+            rbuf.mtype);
+    if (rbuf.mtype == NONE_CMD) {
+      if (!strcmp(rbuf.mtext, "get_id")) {
+        while (TRUE) {
+          id = getrand(known_servers->count + 1, known_servers->count + 21);
+          ptr = get_msq_id(&msq, id, FALSE, &msq_mutex);
+          fprintf(stderr, "Check [id: %d | ptr: %p]\n", id, ptr);
+          if (!ptr)
+            break;
+        }
+        p->id = id;
+        fprintf(stderr, "Set [id: %d]\n", p->id);
+        if (id > known_servers->count) {
+          pthread_mutex_lock(&clients_av_mutex);
+          ++clients_available;
+          ++clients;
+          pthread_mutex_unlock(&clients_av_mutex);
+        }
+        sbuf.mtype = SET_ID;
+        sprintf(sbuf.mtext, "%d", p->id);
+        msgsnd(p->msqid, &sbuf, MAXDATASIZE, IPC_NOWAIT);
+        fprintf(stderr, "Send msg [fd: %d | msg: %s]\n", p->msqid, sbuf.mtext);
+        fprintf(stderr,
+                "Clients [count: %ld(%ld)]\n",
+                clients_available,
+                clients);
+      }
+    } else if (rbuf.mtype == SERVER_SET_ID) {
+      id = atoi(rbuf.mtext);
+      p = get_msq_pid(&msq, pid, FALSE, &msq_mutex);
+      p->id = id;
+      fprintf(stderr, "Server set id [id: %d]\n", p->id);
     }
-    p->id = id;
-    fprintf(stderr, "Set [id: %d]\n", p->id);
-    if (!strcmp("get_id", rbuf.mtext)) {
-      sbuf.mtype = SET_ID;
-      sprintf(sbuf.mtext, "%d", p->id);
-      msgsnd(p->msqid, &sbuf, MAXDATASIZE, IPC_NOWAIT);
-      fprintf(stderr, "Send msg [fd: %d | msg: %s]\n", p->msqid, sbuf.mtext);
-    }
+    print_msq(&msq, &msq_mutex);
   }
 }
 /*---------------------------------------------------------------------------*/
@@ -230,7 +337,38 @@ int accept_tcp_connection(int server_socket) {
   return connection;
 }
 /*---------------------------------------------------------------------------*/
+void synchronized_game(int game_id) {
+  srv_t *cursor = known_servers->srvs;
+  ipc_t *p;
+  int i = 0;
+  for (i = 0; i < known_servers->count; ++i) {
+    p = get_msq_id(&msq, cursor->number, TRUE, &msq_mutex);
+    sbuf.mtype = SINCHRONIZE_GAME;
+    sprintf(sbuf.mtext, "%d", game_id);
+    msgsnd(p->msqid, &sbuf, MAXDATASIZE, IPC_NOWAIT);
+    fprintf(stderr, "Send msg [fd: %d | msg: %s]\n", p->msqid, sbuf.mtext);
+    kill(p->pid, SIGUSR1);
+    cursor = cursor->next;
+  }
+}
+/*---------------------------------------------------------------------------*/
 void *manager() {
+  int game_id = -1;
+  ipc_t *f = NULL;
+  ipc_t *s = NULL;
+  while (!manager_join) {
+    if (clients_available > 0 && !(clients_available % 2) &&
+        games_curr <= GAMES) {
+      game_id = rand() % 100;
+      get_free_pair_msq(&msq, &f, &s, &msq_mutex);
+      add_game(&game_ch, game_id, f, s, this_server->number, &games_mutex);
+      pthread_mutex_lock(&clients_av_mutex);
+      clients_available -= 2;
+      pthread_mutex_unlock(&clients_av_mutex);
+      print_msq(&msq, &msq_mutex);
+      synchronized_game(game_id);
+    }
+  }
   return NULL;
 }
 /*---------------------------------------------------------------------------*/
@@ -241,7 +379,6 @@ void client_connection() {
   pthread_t writer_tid = -1;
   pthread_attr_t reader_attr;
   pthread_attr_t writer_attr;
-  int msqid;
   key_t key;
   char str[MAXDATASIZE];
 
@@ -272,6 +409,10 @@ void client_connection() {
                 p.client_id,
                 getpid());
         client_id = p.client_id;
+        sbuf.mtype = SERVER_SET_ID;
+        sprintf(sbuf.mtext, "%d", client_id);
+        msgsnd(msqid, &sbuf, MAXDATASIZE, IPC_NOWAIT);
+        kill(mainpid, SIGUSR1);
       } else if (p.type == CONN_CLIENT) {
         if (p.client_id > 0) {
           client_id = p.client_id;
@@ -284,9 +425,10 @@ void client_connection() {
           kill(mainpid, SIGUSR1);
           msgrcv(msqid, &rbuf, MAXDATASIZE, SET_ID, 0);
           fprintf(stderr,
-                  "Receive msg [fd: %d | msg: %s]\n",
+                  "Receive msg [fd: %d | msg: %s | type: %ld]\n",
                   msqid,
-                  rbuf.mtext);
+                  rbuf.mtext,
+                  rbuf.mtype);
           client_id = atoi(rbuf.mtext);
         }
         send_packet(make_packet(SERVICE, client_id, rand() % 1000, "set_id"));
@@ -313,6 +455,12 @@ void client_connection() {
                         "Receive SERVICE packet [id: %d | msg: %s]\n",
                         p.client_id, p.buffer);
         */
+      } else if (p.type == SINCHRONIZE) {
+        fprintf(stderr,
+                "Receive SINCHRONIZE packet [id: %d | game: %d | msg: %s]\n",
+                p.client_id,
+                p.packet_id,
+                p.buffer);
       }
     }
   }
@@ -425,6 +573,13 @@ void server_connection(srv_t *cursor) {
   pthread_attr_t reader_attr;
   pthread_attr_t writer_attr;
 
+  key_t key;
+  key = getpid();
+  if ((msqid = msgget(key, 0666)) < 0) {
+    fprintf(stderr, "msgget");
+    exit(1);
+  }
+  fprintf(stderr, "Server connection [fd: %d | pid: %d]\n", msqid, key);
   fprintf(stderr,
           "Trying connect to server[%d] %s:%d\n",
           cursor->number,
@@ -486,13 +641,16 @@ connect_to_other_server:
 void create_connections_to_servers() {
   remove_this_server_from_list();
   int i = 0;
-  pids = (pid_t *)malloc(sizeof(pid_t) * known_servers->count);
+  pid_t pid = -1;
   srv_t *cursor = known_servers->srvs;
+  ipc_t *p;
   for (i = 0; i < known_servers->count; ++i) {
-    if (!(pids[i] = fork())) {
+    if (!(pid = fork())) {
       server_connection(cursor);
     } else {
-      add_msq(&msq, pids[i], TRUE, &msq_mutex);
+      add_msq(&msq, pid, TRUE, &msq_mutex);
+      p = get_msq_pid(&msq, pid, TRUE, &msq_mutex);
+      p->id = cursor->number;
     }
     cursor = cursor->next;
   }

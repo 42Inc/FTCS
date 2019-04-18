@@ -6,12 +6,10 @@ int state_connection = CONN_FALSE;
 pthread_mutex_t connection_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t reader_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t writer_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t helper_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t games_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t servers_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t msq_mutex = PTHREAD_MUTEX_INITIALIZER;
-
+pthread_mutex_t clients_av_mutex = PTHREAD_MUTEX_INITIALIZER;
+int games_curr = 0;
 int client_socket_read = -1;
 int client_socket_write = -1;
 int ack_id = -1;
@@ -39,9 +37,10 @@ void print_msq(ipc_t **root, pthread_mutex_t *mutex) {
   fprintf(stderr, "/*-MSQ----------------*/\n");
   while (p != NULL) {
     fprintf(stderr,
-            "Add msq [id: %d | key: %d | fd: %d | ptr: %p -> %p | Server: %s] "
-            "\n",
-            p->pid,
+            "[id: %d | game: %d | key: %d | fd: %d | ptr: %p -> %p | Server: "
+            "%s]\n",
+            p->id,
+            p->game,
             p->key,
             p->msqid,
             p,
@@ -50,6 +49,42 @@ void print_msq(ipc_t **root, pthread_mutex_t *mutex) {
     p = p->next;
   }
   fprintf(stderr, "/*--------------------*/\n");
+  pthread_mutex_unlock(mutex);
+}
+/*---------------------------------------------------------------------------*/
+void print_games(games_t **root, pthread_mutex_t *mutex) {
+  games_t *p = *root;
+  pthread_mutex_lock(mutex);
+
+  fprintf(stderr, "/*-GAME---------------*/\n");
+  while (p != NULL) {
+    fprintf(stderr,
+            "[id: %d | first: %d | second: %d]\n",
+            p->id,
+            p->player1->id,
+            p->player2->id);
+    p = p->next;
+  }
+  fprintf(stderr, "/*--------------------*/\n");
+  pthread_mutex_unlock(mutex);
+}
+/*---------------------------------------------------------------------------*/
+void get_free_pair_msq(
+        ipc_t **root, ipc_t **f, ipc_t **s, pthread_mutex_t *mutex) {
+  ipc_t *p = *root;
+  pthread_mutex_lock(mutex);
+  while (p != NULL) {
+    if (p->game == -1) {
+      if (*f == NULL)
+        *f = p;
+      else if (*s == NULL)
+        *s = p;
+      if (*f != NULL && *s != NULL)
+        break;
+    }
+    p = p->next;
+  }
+  fprintf(stderr, "Free pair [id_f: %d | id_s: %d]\n", (*f)->id, (*s)->id);
   pthread_mutex_unlock(mutex);
 }
 /*---------------------------------------------------------------------------*/
@@ -65,6 +100,8 @@ int add_msq(ipc_t **root, int pid, int server, pthread_mutex_t *mutex) {
   p->pid = pid;
   p->key = pid;
   p->srv = server;
+  p->id = -1;
+  p->game = -1;
   if ((p->msqid = msgget(p->key, IPC_CREAT | 0666)) < 0) {
     perror("msgget");
     pthread_mutex_unlock(mutex);
@@ -87,13 +124,14 @@ int add_msq(ipc_t **root, int pid, int server, pthread_mutex_t *mutex) {
   return 0;
 }
 /*---------------------------------------------------------------------------*/
-ipc_t *get_msq_pid(ipc_t **root, int pid, pthread_mutex_t *mutex) {
+ipc_t *get_msq_pid(ipc_t **root, int pid, int srv, pthread_mutex_t *mutex) {
   ipc_t *p = *root;
   pthread_mutex_lock(mutex);
 
   while (p != NULL) {
-    if (p->pid == pid) {
+    if (p->pid == pid && p->srv == srv) {
       pthread_mutex_unlock(mutex);
+      fprintf(stderr, "Get msq [pid: %d | ptr: %p]\n", p->pid, p);
       return p;
     }
     p = p->next;
@@ -103,8 +141,25 @@ ipc_t *get_msq_pid(ipc_t **root, int pid, pthread_mutex_t *mutex) {
   return NULL;
 }
 /*---------------------------------------------------------------------------*/
-ipc_t *get_msq_id(ipc_t **root, int id, pthread_mutex_t *mutex) {
+ipc_t *get_msq_id(ipc_t **root, int id, int srv, pthread_mutex_t *mutex) {
   ipc_t *p = *root;
+  pthread_mutex_lock(mutex);
+
+  while (p != NULL) {
+    if (p->id == id && p->srv == srv) {
+      pthread_mutex_unlock(mutex);
+      fprintf(stderr, "Get msq [id: %d]\n", p->id);
+      return p;
+    }
+    p = p->next;
+  }
+  pthread_mutex_unlock(mutex);
+
+  return NULL;
+}
+/*---------------------------------------------------------------------------*/
+games_t *get_game_id(games_t **root, int id, pthread_mutex_t *mutex) {
+  games_t *p = *root;
   pthread_mutex_lock(mutex);
 
   while (p != NULL) {
@@ -157,96 +212,59 @@ int remove_msq(ipc_t **root, int pid, pthread_mutex_t *mutex) {
 /*---------------------------------------------------------------------------*/
 void add_game(
         games_t **root,
-        pid_t id,
-        int f,
-        int s,
-        pid_t pf,
-        pid_t ps,
-        int o,
+        int id,
+        ipc_t *f,
+        ipc_t *s,
+        int own,
         pthread_mutex_t *mutex) {
   games_t *p;
+  int fd;
+  char name[15];
   p = (games_t *)malloc(sizeof(games_t));
   pthread_mutex_lock(mutex);
   if (p == NULL) {
+    fprintf(stderr, "Error: Memory Allocation [func: %s]\n", "add_game");
     pthread_mutex_unlock(mutex);
     return;
   }
   p->id = id;
   p->player1 = f;
   p->player2 = s;
-  p->p_player1 = pf;
-  p->p_player2 = ps;
-  p->owner = o;
+  p->owner = own;
+  p->player1->game = id;
+  p->player2->game = id;
   if (*root == NULL) {
     *root = p;
   } else {
     p->next = *root;
     *root = p;
   }
+  pthread_mutex_unlock(mutex);
   fprintf(stderr,
-          "Add game [id: %d | first: %d | second: %d | owner: %d] \n",
+          "Add game [id: %d | first: %d | second: %d] \n",
           p->id,
-          p->player1,
-          p->player2,
-          p->owner);
-  pthread_mutex_unlock(mutex);
-}
-/*---------------------------------------------------------------------------*/
-void add_client(
-        clients_t **root, pid_t pid, int id, int srv, pthread_mutex_t *mutex) {
-  clients_t *p;
-  p = (clients_t *)malloc(sizeof(clients_t));
-  pthread_mutex_lock(mutex);
-  if (p == NULL) {
-    pthread_mutex_unlock(mutex);
-    return;
-  }
-  p->pid = pid;
-  p->id = id;
-  p->srv = srv;
-  p->game = -1;
-  p->status = FALSE;
-  p->time = -1;
-  if (*root == NULL) {
-    *root = p;
-  } else {
-    p->next = *root;
-    *root = p;
-  }
-  fprintf(stderr,
-          "Add client [id: %d | pid: %d | srv: %d] \n",
-          p->id,
-          p->pid,
-          p->srv);
-  pthread_mutex_unlock(mutex);
-}
-/*---------------------------------------------------------------------------*/
-int disconnect_client(clients_t **root, pid_t pid, pthread_mutex_t *mutex) {
-  pthread_mutex_lock(mutex);
-  clients_t *p = *root;
-  if (*root == NULL) {
-    pthread_mutex_unlock(mutex);
-    return -1;
-  }
-  while (p != NULL) {
-    if (p->pid == pid) {
-      p->pid = -1;
-      p->time = wtime();
-      pthread_mutex_unlock(mutex);
-      return p->id;
-    }
-    p = p->next;
-  }
-  pthread_mutex_unlock(mutex);
-  return -1;
+          p->player1->id,
+          p->player2->id);
+  games_curr++;
+
+  sprintf(name, "%d.game", p->id);
+  fd = open(name, O_WRONLY | O_CREAT, 0666);
+  write(fd, &p->owner, sizeof(int));
+  write(fd, &p->player1->id, sizeof(int)); // X
+  write(fd, &p->player2->id, sizeof(int)); // O
+  write(fd, &p->player1->id, sizeof(int));
+  write(fd, "AAAAAAAAA", strlen("AAAAAAAAA") + 1);
+  close(fd);
+  print_games(root, mutex);
 }
 /*----------------------------------------------------------------------------*/
-int remove_game(games_t **root, pid_t id, pthread_mutex_t *mutex) {
+int remove_game(
+        games_t **root, int id, int win, int lose, pthread_mutex_t *mutex) {
   games_t *prev = NULL;
   games_t *p = *root;
+  char cmd[20];
   pthread_mutex_lock(mutex);
   if (*root == NULL) {
-    //    fprintf(stderr, "Remove NULL\n");
     pthread_mutex_unlock(mutex);
     return 1;
   }
@@ -258,13 +276,31 @@ int remove_game(games_t **root, pid_t id, pthread_mutex_t *mutex) {
     if (p->id == id) {
       if (prev != NULL) {
         prev->next = p->next;
+        fprintf(stderr,
+                "Remove game [id: %d | win: %d | lose %d] \n",
+                p->id,
+                win,
+                lose);
+        sprintf(cmd, "rm -f %d.game", p->id);
+        system(cmd);
         free(p);
         pthread_mutex_unlock(mutex);
+        print_games(root, mutex);
+        --games_curr;
         return 0;
       } else {
         *root = p->next;
+        fprintf(stderr,
+                "Remove game [id: %d | win: %d | lose %d] \n",
+                p->id,
+                win,
+                lose);
+        sprintf(cmd, "rm -f %d.game", p->id);
+        system(cmd);
         free(p);
         pthread_mutex_unlock(mutex);
+        print_games(root, mutex);
+        --games_curr;
         return 0;
       }
     }
@@ -272,6 +308,7 @@ int remove_game(games_t **root, pid_t id, pthread_mutex_t *mutex) {
     p = p->next;
   }
   pthread_mutex_unlock(mutex);
+  print_games(root, mutex);
   return 1;
 }
 /*---------------------------------------------------------------------------*/

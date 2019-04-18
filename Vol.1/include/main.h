@@ -25,7 +25,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define GAMES 4
+#define GAMES 10
 #define TIMEOUT 10
 #define PORT 65500
 #define MAXDATASIZE 256
@@ -38,6 +38,10 @@
 #define FALSE 0
 #define GET_ID 1
 #define SET_ID 2
+#define SERVER_SET_ID 3
+#define WIN_END_GAME 4
+#define LOSE_END_GAME 5
+#define SINCHRONIZE_GAME 6
 #define NONE_CMD 100
 
 typedef enum type_packet {
@@ -50,6 +54,7 @@ typedef enum type_packet {
   CONN_RECONNECT = 6,
   CONN_SERVER = 7,
   CONN_CLIENT = 8,
+  SINCHRONIZE = 9,
   NONE = 100
 } type_packet_t;
 
@@ -57,6 +62,7 @@ typedef struct _ipc {
   pid_t pid;
   key_t key;
   int id;
+  int game;
   int srv;
   int msqid;
   struct _ipc *next;
@@ -88,11 +94,9 @@ typedef struct servers_pool {
 
 typedef struct game {
   int id;
-  int player1;
-  int player2;
-  pid_t p_player1;
-  pid_t p_player2;
   int owner;
+  ipc_t *player1;
+  ipc_t *player2;
   struct game *next;
 } games_t;
 
@@ -132,13 +136,11 @@ void create_connections_to_servers();
 void remove_this_server_from_list();
 int client_tcp_connect(struct hostent *ip, int port);
 void server_connection(srv_t *cursor);
-int remove_game(games_t **root, pid_t id, pthread_mutex_t *mutex);
-int disconnect_client(clients_t **root, pid_t pid, pthread_mutex_t *mutex);
-int remove_client(clients_t **root, pid_t pid, pthread_mutex_t *mutex);
-void add_client(
-        clients_t **root, pid_t pid, int id, int srv, pthread_mutex_t *mutex);
-ipc_t *get_msq_pid(ipc_t **root, int pid, pthread_mutex_t *msq_mutex);
-ipc_t *get_msq_id(ipc_t **root, int id, pthread_mutex_t *msq_mutex);
+int remove_game(
+        games_t **root, int id, int win, int lose, pthread_mutex_t *mutex);
+games_t *get_game_id(games_t **root, int id, pthread_mutex_t *mutex);
+ipc_t *get_msq_pid(ipc_t **root, int pid, int srv, pthread_mutex_t *msq_mutex);
+ipc_t *get_msq_id(ipc_t **root, int id, int srv, pthread_mutex_t *msq_mutex);
 int remove_msq(ipc_t **root, int pid, pthread_mutex_t *mutex);
 int add_msq(ipc_t **root, int pid, int server, pthread_mutex_t *mutex);
 void print_msq(ipc_t **root, pthread_mutex_t *mutex);
@@ -146,11 +148,11 @@ void printBox();
 int getrand(int min, int max);
 void add_game(
         games_t **root,
-        pid_t id,
-        int f,
-        int s,
-        pid_t pf,
-        pid_t ps,
-        int o,
+        int id,
+        ipc_t *f,
+        ipc_t *s,
+        int own,
         pthread_mutex_t *mutex);
+void get_free_pair_msq(
+        ipc_t **root, ipc_t **f, ipc_t **s, pthread_mutex_t *mutex);
 #endif
