@@ -30,6 +30,23 @@ int getrand(int min, int max) {
   return (double)rand() / (RAND_MAX + 1.0) * (max - min) + min;
 }
 /*---------------------------------------------------------------------------*/
+void msq_set_game(ipc_t **p, int game, pthread_mutex_t *mutex) {
+  if (*p == NULL)
+    return;
+  pthread_mutex_lock(mutex);
+  if (game == -1) {
+    fprintf(stderr,
+            "Reject reconnect to game [pid: %d | id: %d | game: %d]\n",
+            (*p)->pid,
+            (*p)->id,
+            game);
+  } else {
+    fprintf(stderr, "Reconnect to game [id: %d | game: %d]\n", (*p)->id, game);
+    (*p)->game = game;
+  }
+  pthread_mutex_unlock(mutex);
+}
+/*---------------------------------------------------------------------------*/
 void print_msq(ipc_t **root, pthread_mutex_t *mutex) {
   ipc_t *p = *root;
   pthread_mutex_lock(mutex);
@@ -61,8 +78,8 @@ void print_games(games_t **root, pthread_mutex_t *mutex) {
     fprintf(stderr,
             "[id: %d | first: %d | second: %d]\n",
             p->id,
-            p->player1->id,
-            p->player2->id);
+            p->player1_id,
+            p->player2_id);
     p = p->next;
   }
   fprintf(stderr, "/*--------------------*/\n");
@@ -74,7 +91,7 @@ void get_free_pair_msq(
   ipc_t *p = *root;
   pthread_mutex_lock(mutex);
   while (p != NULL) {
-    if (p->game == -1) {
+    if (p->game == -1 && p->srv == FALSE) {
       if (*f == NULL)
         *f = p;
       else if (*s == NULL)
@@ -131,7 +148,7 @@ ipc_t *get_msq_pid(ipc_t **root, int pid, int srv, pthread_mutex_t *mutex) {
   while (p != NULL) {
     if (p->pid == pid && p->srv == srv) {
       pthread_mutex_unlock(mutex);
-      fprintf(stderr, "Get msq [pid: %d | ptr: %p]\n", p->pid, p);
+      //      fprintf(stderr, "Get msq [pid: %d | ptr: %p]\n", p->pid, p);
       return p;
     }
     p = p->next;
@@ -148,7 +165,7 @@ ipc_t *get_msq_id(ipc_t **root, int id, int srv, pthread_mutex_t *mutex) {
   while (p != NULL) {
     if (p->id == id && p->srv == srv) {
       pthread_mutex_unlock(mutex);
-      fprintf(stderr, "Get msq [id: %d]\n", p->id);
+      //      fprintf(stderr, "Get msq [id: %d]\n", p->id);
       return p;
     }
     p = p->next;
@@ -215,6 +232,8 @@ void add_game(
         int id,
         ipc_t *f,
         ipc_t *s,
+        int fi,
+        int si,
         int own,
         pthread_mutex_t *mutex) {
   games_t *p;
@@ -228,11 +247,15 @@ void add_game(
     return;
   }
   p->id = id;
+  p->player1_id = fi;
+  p->player2_id = si;
   p->player1 = f;
   p->player2 = s;
   p->owner = own;
-  p->player1->game = id;
-  p->player2->game = id;
+  if (p->player1 != NULL)
+    p->player1->game = id;
+  if (p->player2 != NULL)
+    p->player2->game = id;
   if (*root == NULL) {
     *root = p;
   } else {
@@ -243,16 +266,17 @@ void add_game(
   fprintf(stderr,
           "Add game [id: %d | first: %d | second: %d] \n",
           p->id,
-          p->player1->id,
-          p->player2->id);
+          p->player1_id,
+          p->player2_id);
   games_curr++;
 
   sprintf(name, "%d.game", p->id);
   fd = open(name, O_WRONLY | O_CREAT, 0666);
+  write(fd, &p->id, sizeof(int));
   write(fd, &p->owner, sizeof(int));
-  write(fd, &p->player1->id, sizeof(int)); // X
-  write(fd, &p->player2->id, sizeof(int)); // O
-  write(fd, &p->player1->id, sizeof(int));
+  write(fd, &p->player1_id, sizeof(int)); // X
+  write(fd, &p->player2_id, sizeof(int)); // O
+  write(fd, &p->player1_id, sizeof(int));
   write(fd, "AAAAAAAAA", strlen("AAAAAAAAA") + 1);
   close(fd);
   print_games(root, mutex);
@@ -489,7 +513,7 @@ make_packet(type_packet_t type, int client_id, int packet_id, char *buff) {
   p.client_id = client_id;
   p.packet_id = packet_id;
   if (buff != NULL) {
-    strcpy(p.buffer, buff);
+    memcpy(p.buffer, buff, MAXDATASIZE);
   } else {
     p.buffer[0] = '\0';
   }

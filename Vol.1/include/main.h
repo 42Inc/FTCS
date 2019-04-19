@@ -41,8 +41,14 @@
 #define SERVER_SET_ID 3
 #define WIN_END_GAME 4
 #define LOSE_END_GAME 5
-#define SINCHRONIZE_GAME 6
+#define SYNCHRONIZE_GAME 6
+#define SYNCHRONIZE_CHANGE 7
+#define SYNCHRONIZE_RM 8
+#define START_GAME 9
+#define RECONNECT_GAME 10
+#define RECONNECT_ID 11
 #define NONE_CMD 100
+#define SIZE_GAME (sizeof(int) * 5 + 10)
 
 typedef enum type_packet {
   MSG = 0,
@@ -54,7 +60,8 @@ typedef enum type_packet {
   CONN_RECONNECT = 6,
   CONN_SERVER = 7,
   CONN_CLIENT = 8,
-  SINCHRONIZE = 9,
+  SYNCHRONIZE = 9,
+  SYNCHRONIZE_REMOVE = 10,
   NONE = 100
 } type_packet_t;
 
@@ -94,6 +101,8 @@ typedef struct servers_pool {
 
 typedef struct game {
   int id;
+  int player1_id;
+  int player2_id;
   int owner;
   ipc_t *player1;
   ipc_t *player2;
@@ -146,13 +155,18 @@ int add_msq(ipc_t **root, int pid, int server, pthread_mutex_t *mutex);
 void print_msq(ipc_t **root, pthread_mutex_t *mutex);
 void printBox();
 int getrand(int min, int max);
+void synchronized_game_w(int game_id, int w, int l);
+void synchronized_game(int game_id);
 void add_game(
         games_t **root,
         int id,
         ipc_t *f,
         ipc_t *s,
+        int fi,
+        int si,
         int own,
         pthread_mutex_t *mutex);
+void msq_set_game(ipc_t **p, int game, pthread_mutex_t *mutex);
 void get_free_pair_msq(
         ipc_t **root, ipc_t **f, ipc_t **s, pthread_mutex_t *mutex);
 #endif

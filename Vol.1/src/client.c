@@ -24,9 +24,9 @@ extern pthread_mutex_t helper_mutex;
 extern srv_pool_t *known_servers;
 int echoIgn = 0;
 char field[10] = "AAAAAAAAA";
-static int symX[2] = {405029505, 2168595480};
-static int symO[2] = {2172748158, 2122416513};
-static int symA[2] = {0, 0};
+// static int symX[2] = {405029505, 2168595480};
+// static int symO[2] = {2172748158, 2122416513};
+// static int symA[2] = {0, 0};
 int client_id = -1;
 int game_id = -1;
 int chat_mode = FALSE;
@@ -166,6 +166,7 @@ int main(int argc, char **argv) {
   char buff[20];
   char chat_sym = -1;
   int chat_index = 0;
+  int game_id = 0;
   short int cursor_x = 0;
   short int cursor_y = 0;
   enum keys key = KEY_other;
@@ -224,14 +225,21 @@ int main(int argc, char **argv) {
       game_state = GAME_IN_PROG;
       while (check_connection()) {
         while (!get_packet(&p))
-          ;
+          if (!check_connection())
+            break;
         if (p.type == CONN_EST) {
-          send_packet(make_packet(CONN_CLIENT, client_id, 0, NULL));
+          send_packet(make_packet(CONN_CLIENT, client_id, game_id, NULL));
         } else if (p.type == SERVICE) {
+          fprintf(stderr, "SERVICE [id: %d | %s]\n", p.client_id, p.buffer);
           if (!strcmp(p.buffer, "set_id"))
             client_id = p.client_id;
-          break;
+          if (!strcmp(p.buffer, "start_game")) {
+            fprintf(stdout, "Start game. ID : %d\n", p.packet_id);
+            game_id = p.packet_id;
+          }
         }
+        if (client_id > 0 && game_id > 0)
+          break;
       }
       if (state_connection == CONN_TRUE)
         fprintf(stdout, "Connection established. Client ID : %d\n", client_id);
