@@ -137,7 +137,7 @@ int add_msq(ipc_t **root, int pid, int server, pthread_mutex_t *mutex) {
           p->msqid,
           p);
   pthread_mutex_unlock(mutex);
-  print_msq(root, mutex);
+  // print_msq(root, mutex);
   return 0;
 }
 /*---------------------------------------------------------------------------*/
@@ -166,6 +166,22 @@ ipc_t *get_msq_id(ipc_t **root, int id, int srv, pthread_mutex_t *mutex) {
     if (p->id == id && p->srv == srv) {
       pthread_mutex_unlock(mutex);
       //      fprintf(stderr, "Get msq [id: %d]\n", p->id);
+      return p;
+    }
+    p = p->next;
+  }
+  pthread_mutex_unlock(mutex);
+
+  return NULL;
+}
+/*---------------------------------------------------------------------------*/
+games_t *get_game_pid(games_t **root, int pid, pthread_mutex_t *mutex) {
+  games_t *p = *root;
+  pthread_mutex_lock(mutex);
+
+  while (p != NULL) {
+    if (p->player1->pid == pid || p->player2->pid == pid) {
+      pthread_mutex_unlock(mutex);
       return p;
     }
     p = p->next;
@@ -209,13 +225,13 @@ int remove_msq(ipc_t **root, int pid, pthread_mutex_t *mutex) {
         prev->next = p->next;
         free(p);
         pthread_mutex_unlock(mutex);
-        print_msq(root, mutex);
+        // print_msq(root, mutex);
         return 0;
       } else {
         *root = p->next;
         free(p);
         pthread_mutex_unlock(mutex);
-        print_msq(root, mutex);
+        // print_msq(root, mutex);
         return 0;
       }
     }
@@ -223,11 +239,11 @@ int remove_msq(ipc_t **root, int pid, pthread_mutex_t *mutex) {
     p = p->next;
   }
   pthread_mutex_unlock(mutex);
-  print_msq(root, mutex);
+  // print_msq(root, mutex);
   return 1;
 }
 /*---------------------------------------------------------------------------*/
-void add_game(
+games_t *add_game(
         games_t **root,
         int id,
         ipc_t *f,
@@ -244,14 +260,16 @@ void add_game(
   if (p == NULL) {
     fprintf(stderr, "Error: Memory Allocation [func: %s]\n", "add_game");
     pthread_mutex_unlock(mutex);
-    return;
+    exit(EXIT_FAILURE);
   }
   p->id = id;
   p->player1_id = fi;
   p->player2_id = si;
   p->player1 = f;
+  p->go = fi;
   p->player2 = s;
   p->owner = own;
+  strcpy(p->field, "AAAAAAAAA");
   if (p->player1 != NULL)
     p->player1->game = id;
   if (p->player2 != NULL)
@@ -262,7 +280,6 @@ void add_game(
     p->next = *root;
     *root = p;
   }
-  pthread_mutex_unlock(mutex);
   fprintf(stderr,
           "Add game [id: %d | first: %d | second: %d] \n",
           p->id,
@@ -276,10 +293,12 @@ void add_game(
   write(fd, &p->owner, sizeof(int));
   write(fd, &p->player1_id, sizeof(int)); // X
   write(fd, &p->player2_id, sizeof(int)); // O
-  write(fd, &p->player1_id, sizeof(int));
+  write(fd, &p->go, sizeof(int));
   write(fd, "AAAAAAAAA", strlen("AAAAAAAAA") + 1);
   close(fd);
-  print_games(root, mutex);
+  pthread_mutex_unlock(mutex);
+  return p;
+  // print_games(root, mutex);
 }
 /*----------------------------------------------------------------------------*/
 int remove_game(
@@ -309,7 +328,7 @@ int remove_game(
         system(cmd);
         free(p);
         pthread_mutex_unlock(mutex);
-        print_games(root, mutex);
+        // print_games(root, mutex);
         --games_curr;
         return 0;
       } else {
@@ -323,7 +342,7 @@ int remove_game(
         system(cmd);
         free(p);
         pthread_mutex_unlock(mutex);
-        print_games(root, mutex);
+        // print_games(root, mutex);
         --games_curr;
         return 0;
       }
@@ -332,7 +351,7 @@ int remove_game(
     p = p->next;
   }
   pthread_mutex_unlock(mutex);
-  print_games(root, mutex);
+  // print_games(root, mutex);
   return 1;
 }
 /*---------------------------------------------------------------------------*/

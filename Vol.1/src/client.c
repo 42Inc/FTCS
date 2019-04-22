@@ -22,6 +22,9 @@ extern pthread_mutex_t reader_mutex;
 extern pthread_mutex_t writer_mutex;
 extern pthread_mutex_t helper_mutex;
 extern srv_pool_t *known_servers;
+
+short int cursor_x = 0;
+short int cursor_y = 0;
 int echoIgn = 0;
 char field[10] = "AAAAAAAAA";
 // static int symX[2] = {405029505, 2168595480};
@@ -112,9 +115,16 @@ void *client_writer() {
 /*---------------------------------------------------------------------------*/
 void printInt() {
   int i = 0;
-  //  mt_clrscr();
+  mt_clrscr();
   for (i = 0; i < 9; i++) {
-    printf("%c", field[i]);
+    if (i == cursor_y * 3 + cursor_x) {
+      mt_setbgcolor(clr_blue);
+      mt_setfgcolor(clr_red);
+      printf("%c", field[i]);
+      mt_setbgcolor(clr_default);
+      mt_setfgcolor(clr_default);
+    } else
+      printf("%c", field[i]);
     if ((i + 1) % 3 == 0)
       printf("\n");
   }
@@ -167,10 +177,8 @@ int main(int argc, char **argv) {
   char chat_sym = -1;
   int chat_index = 0;
   int game_id = 0;
-  short int cursor_x = 0;
-  short int cursor_y = 0;
   enum keys key = KEY_other;
-
+  int get_field = 0;
   reader_buffer = (packets_t *)malloc(sizeof(packets_t));
   writer_buffer = (packets_t *)malloc(sizeof(packets_t));
   memset(reader_buffer, 0, sizeof(packets_t));
@@ -237,8 +245,11 @@ int main(int argc, char **argv) {
             fprintf(stdout, "Start game. ID : %d\n", p.packet_id);
             game_id = p.packet_id;
           }
+        } else if (p.type == CHANGE_FIELD) {
+          get_field = 1;
+          strcpy(field, p.buffer);
         }
-        if (client_id > 0 && game_id > 0)
+        if (client_id > 0 && game_id > 0 && get_field > 0)
           break;
       }
       if (state_connection == CONN_TRUE)
@@ -252,6 +263,26 @@ int main(int argc, char **argv) {
           rk_readkey(&key, FALSE);
           chat_sym = -1;
           switch (key) {
+          case KEY_left:
+            cursor_x = (cursor_x - 1) < 0 ? 2 : (cursor_x - 1);
+            refresh = TRUE;
+            key = KEY_other;
+            break;
+          case KEY_right:
+            cursor_x = (cursor_x + 1) % 3;
+            refresh = TRUE;
+            key = KEY_other;
+            break;
+          case KEY_up:
+            cursor_y = (cursor_y - 1) < 0 ? 2 : (cursor_y - 1);
+            refresh = TRUE;
+            key = KEY_other;
+            break;
+          case KEY_down:
+            cursor_y = (cursor_y + 1) % 3;
+            refresh = TRUE;
+            key = KEY_other;
+            break;
           case KEY_esc:
             chat_mode = TRUE;
             refresh = TRUE;
@@ -314,12 +345,11 @@ int main(int argc, char **argv) {
               game_state = FALSE;
               state_connection = FALSE;
               break;
-            } else {
             }
           } else if (p.type == CHANGE_FIELD) {
             strcpy(field, p.buffer);
           } else if (p.type == MSG) {
-            //            strcpy(p.buffer, field);
+            fprintf(stdout, "Msg: %s\n", p.buffer);
           }
           refresh = TRUE;
         }

@@ -47,6 +47,10 @@
 #define START_GAME 9
 #define RECONNECT_GAME 10
 #define RECONNECT_ID 11
+#define FIELD 12
+#define MESSAGE 13
+#define FIELD_M 14
+#define AVAIL_ID 15
 #define NONE_CMD 100
 #define SIZE_GAME (sizeof(int) * 5 + 10)
 
@@ -103,9 +107,12 @@ typedef struct game {
   int id;
   int player1_id;
   int player2_id;
+  ;
+  int go;
   int owner;
   ipc_t *player1;
   ipc_t *player2;
+  char field[10];
   struct game *next;
 } games_t;
 
@@ -148,6 +155,8 @@ void server_connection(srv_t *cursor);
 int remove_game(
         games_t **root, int id, int win, int lose, pthread_mutex_t *mutex);
 games_t *get_game_id(games_t **root, int id, pthread_mutex_t *mutex);
+games_t *get_game_pid(games_t **root, int pid, pthread_mutex_t *mutex);
+
 ipc_t *get_msq_pid(ipc_t **root, int pid, int srv, pthread_mutex_t *msq_mutex);
 ipc_t *get_msq_id(ipc_t **root, int id, int srv, pthread_mutex_t *msq_mutex);
 int remove_msq(ipc_t **root, int pid, pthread_mutex_t *mutex);
@@ -157,7 +166,7 @@ void printBox();
 int getrand(int min, int max);
 void synchronized_game_w(int game_id, int w, int l);
 void synchronized_game(int game_id);
-void add_game(
+games_t *add_game(
         games_t **root,
         int id,
         ipc_t *f,
