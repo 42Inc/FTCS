@@ -128,15 +128,6 @@ typedef struct packet_queue_header {
   packet_queue_t *q;
 } packets_t;
 
-typedef struct client {
-  pid_t pid;
-  int id;
-  int srv;
-  int game;
-  int status;
-  double time;
-  struct client *next;
-} clients_t;
 packet_t
 make_packet(type_packet_t type, int client_id, int packet_id, char *buff);
 int send_packet(packet_t p);

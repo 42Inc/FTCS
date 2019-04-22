@@ -355,68 +355,6 @@ int remove_game(
   return 1;
 }
 /*---------------------------------------------------------------------------*/
-int remove_client(clients_t **root, pid_t pid, pthread_mutex_t *mutex) {
-  clients_t *prev = NULL;
-  clients_t *p = *root;
-  int id = -1;
-  pthread_mutex_lock(mutex);
-  if (*root == NULL) {
-    //    fprintf(stderr, "Remove NULL\n");
-    pthread_mutex_unlock(mutex);
-    return -1;
-  }
-  if (pid == -2) {
-    while (p != NULL) {
-      if (p->time > 0 && (wtime() - p->time) > TIMEOUT) {
-        fprintf(stderr, "Remove node [id: %d] TIMEOUT\n", p->id);
-        if (prev != NULL) {
-          prev->next = p->next;
-          id = p->id;
-          free(p);
-          pthread_mutex_unlock(mutex);
-          //          fprintf(stderr, "Return id: %d\n", id);
-          return id;
-        } else {
-          *root = p->next;
-          id = p->id;
-          free(p);
-          pthread_mutex_unlock(mutex);
-          //          fprintf(stderr, "Return id: %d\n", id);
-          return id;
-        }
-      }
-      prev = p;
-      p = p->next;
-    }
-    pthread_mutex_unlock(mutex);
-    return -1;
-  }
-  pthread_mutex_unlock(mutex);
-  prev = NULL;
-  p = *root;
-  pthread_mutex_lock(mutex);
-  while (p != NULL) {
-    if (p->pid == pid) {
-      if (prev != NULL) {
-        prev->next = p->next;
-        free(p);
-        pthread_mutex_unlock(mutex);
-        return 0;
-      } else {
-        *root = p->next;
-        free(p);
-        pthread_mutex_unlock(mutex);
-        return 0;
-      }
-    }
-    prev = p;
-    p = p->next;
-  }
-  pthread_mutex_unlock(mutex);
-
-  return 1;
-}
-/*---------------------------------------------------------------------------*/
 int client_tcp_connect(struct hostent *ip, int port) {
   int sock;
   struct sockaddr_in client;

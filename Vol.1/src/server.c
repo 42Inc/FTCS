@@ -34,8 +34,6 @@ int server_socket_write = -1;
 pid_t mainpid = -1;
 srv_t *this_server = NULL;
 int shutdown_server = 0;
-clients_t *cl_pids = NULL;
-clients_t *se_pids = NULL;
 ipc_t *msq = NULL;
 games_t *chumbers = NULL;
 pthread_mutex_t mut = PTHREAD_MUTEX_INITIALIZER;
@@ -471,17 +469,6 @@ int accept_tcp_connection(int server_socket) {
   if ((connection = accept(
                server_socket, (struct sockaddr *)&connection_addr, &len)) < 0) {
     fprintf(stderr, "Accept failed\n");
-    clients_t *cursor = cl_pids;
-    while (cursor != NULL) {
-      kill(cursor->pid, SIGKILL);
-      cursor = cursor->next;
-    }
-    cursor = se_pids;
-    while (cursor != NULL) {
-      kill(cursor->pid, SIGKILL);
-      cursor = cursor->next;
-    }
-    exit(EXIT_FAILURE);
   }
   fprintf(stdout,
           "Client conneted, ip: %s\n",
