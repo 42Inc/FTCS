@@ -34,7 +34,15 @@ int client_id = -1;
 int game_id = -1;
 int chat_mode = FALSE;
 
+struct sigaction pipes;
+sigset_t setpipes;
 static struct termios originalTerm;
+
+void sigpipes_handler(int s, siginfo_t *info, void *param) {
+  //  pthread_mutex_lock(&connection_mutex);
+  while (state_connection != FALSE) state_connection = FALSE;
+  //  pthread_mutex_unlock(&connection_mutex);
+}
 /*---------------------------------------------------------------------------*/
 void *client_reader() {
   int recv_result;
@@ -166,6 +174,7 @@ void restoreEchoRegime() {
 /*---------------------------------------------------------------------------*/
 int main(int argc, char **argv) {
   int index = 0;
+  int trying = 20;
   pthread_t reader_tid = -1;
   pthread_t writer_tid = -1;
   pthread_attr_t reader_attr;
@@ -179,6 +188,16 @@ int main(int argc, char **argv) {
   int game_id = 0;
   enum keys key = KEY_other;
   int get_field = 0;
+
+  sigemptyset(&setpipes);
+  sigaddset(&setpipes, SIGPIPE);
+  pipes.sa_sigaction = sigpipes_handler;
+  pipes.sa_mask = setpipes;
+  pipes.sa_flags = SA_NOCLDSTOP | SA_RESTART | SA_SIGINFO;
+  if (sigaction(SIGPIPE, &pipes, NULL) == -1) {
+    fprintf(stderr, "SIGPIPE");
+    exit(1);
+  }
   reader_buffer = (packets_t *)malloc(sizeof(packets_t));
   writer_buffer = (packets_t *)malloc(sizeof(packets_t));
   memset(reader_buffer, 0, sizeof(packets_t));
@@ -191,7 +210,7 @@ int main(int argc, char **argv) {
         read_servers_pool("ippool.dat");
         cursor = known_servers->srvs;
       }
-
+    connection:
       fprintf(stderr, "Connecting to %s:%d\n", cursor->ip, cursor->port);
       if ((gethostname(cursor->ip, sizeof(cursor->ip))) == 0) {
         hostIP = gethostbyname(cursor->ip);
@@ -209,7 +228,18 @@ int main(int argc, char **argv) {
         cursor = cursor->next;
         if (known_servers->count == index) {
           fprintf(stderr, "All servers unreacheble!\n");
-          break;
+          trying--;
+          if (trying >= 0) {
+            printf("Trying:\n");
+            cursor = known_servers->srvs;
+            trying--;
+            index = 0;
+            sleep(1);
+            goto connection;
+          } else {
+            trying = 20;
+            break;
+          }
         }
         if (cursor == NULL) {
           fprintf(stderr, "End of list!\n");
@@ -235,6 +265,12 @@ int main(int argc, char **argv) {
         while (!get_packet(&p))
           if (!check_connection())
             break;
+        fprintf(stderr,
+                "RESPOND [id: %d %d | %s | %d]\n",
+                p.client_id,
+                client_id,
+                p.buffer,
+                p.type);
         if (p.type == CONN_EST) {
           send_packet(make_packet(CONN_CLIENT, client_id, game_id, NULL));
         } else if (p.type == SERVICE) {
@@ -328,6 +364,12 @@ int main(int argc, char **argv) {
         }
         send_packet(make_packet(SERVICE, client_id, 0, "Check"));
         if (get_packet(&p) == TRUE) {
+          fprintf(stderr,
+                  "RESPOND [id: %d %d | %s | %d]\n",
+                  p.client_id,
+                  client_id,
+                  p.buffer,
+                  p.type);
           if (p.type == SERVICE) {
             if (!strcmp(p.buffer, "set_id")) {
               client_id = p.client_id;

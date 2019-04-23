@@ -26,7 +26,7 @@ sigset_t setusr1;
 struct sigaction usr2;
 sigset_t setusr2;
 
-int client_id = -1;
+int client_id = -2;
 int msqid = -1;
 int games = GAMES;
 int server_socket_read = -1;
@@ -129,6 +129,7 @@ void sigusr1_handler(int s, siginfo_t *info, void *param) {
   int go = -1;
   int own = -1;
   int cell = 0;
+  int final = 0;
   ipc_t *p = NULL;
   games_t *g = NULL;
   ipc_t *ptr = NULL;
@@ -148,6 +149,9 @@ void sigusr1_handler(int s, siginfo_t *info, void *param) {
     if (rbuf.mtype == WIN_END_GAME) {
       fprintf(stderr, "Server send win [id: %d]\n", msqid);
       send_packet(make_packet(SERVICE, id, 0, "winner"));
+    } else if (rbuf.mtype == LOSE_END_GAME) {
+      fprintf(stderr, "Server send lose [id: %d]\n", msqid);
+      send_packet(make_packet(SERVICE, id, 0, "looser"));
     } else if (rbuf.mtype == SYNCHRONIZE_GAME) {
       fprintf(stderr,
               "Request for sinchronisation [pid: %d | id: %d | state: %d]\n",
@@ -292,18 +296,18 @@ void sigusr1_handler(int s, siginfo_t *info, void *param) {
         if (g->player1_id == fi) {
           p = get_msq_id(&msq, fi, FALSE, &msq_mutex);
           msq_set_game(&p, g->id, &msq_mutex);
-          printf("game %d notound1!\n", p->game);
+          //            printf("game %d notound1!\n", p->game);
           while (g->player1 != p) g->player1 = p;
-          printf("game %p notound1!\n", g->player1);
+          //            printf("game %p notound1!\n", g->player1);
         } else if (g->player2_id == fi) {
           p = get_msq_id(&msq, fi, FALSE, &msq_mutex);
           msq_set_game(&p, g->id, &msq_mutex);
-          printf("game %d notound2!\n", p->game);
+          //            printf("game %d notound2!\n", p->game);
           while (g->player2 != p) g->player2 = p;
-          printf("game %p notound2!\n", g->player2);
+          //            printf("game %p notound2!\n", g->player2);
         }
       } else {
-        printf("game %d not found!\n", id);
+        //        printf("game %d not found!\n", id);
         msq_set_game(&p, -1, &msq_mutex);
       }
     } else if (rbuf.mtype == MESSAGE) {
@@ -328,26 +332,58 @@ void sigusr1_handler(int s, siginfo_t *info, void *param) {
           if (g->field[cell] == 'A' && g->go == g->player1_id) {
             g->field[cell] = 'X';
             g->go = g->player2_id;
-            synchronized_game(g->id);
+            if (chkwin('X', g->field)) {
+              final = 1;
+            } else {
+              final = 0;
+              synchronized_game(g->id);
+            }
           }
         } else if (g->player2->pid == pid) {
           if (g->field[cell] == 'A' && g->go == g->player2_id) {
             g->field[cell] = 'O';
             g->go = g->player1_id;
-            synchronized_game(g->id);
+            if (chkwin('O', g->field)) {
+              final = 2;
+            } else {
+              final = 0;
+              synchronized_game(g->id);
+            }
           }
         }
         sbuf.mtype = FIELD;
         memcpy(sbuf.mtext, g->field, 10);
         if (g->player1) {
-          printf("SEND FP1\n");
+          //          printf("SEND FP1\n");
           msgsnd(g->player1->msqid, &sbuf, MAXDATASIZE, IPC_NOWAIT);
           kill(g->player1->pid, SIGUSR1);
         }
         if (g->player2) {
-          printf("SEND FP2\n");
+          //          printf("SEND FP2\n");
           msgsnd(g->player2->msqid, &sbuf, MAXDATASIZE, IPC_NOWAIT);
           kill(g->player2->pid, SIGUSR1);
+        }
+        usleep(1000);
+        if (final == 1) {
+          sbuf.mtype = WIN_END_GAME;
+          sprintf(sbuf.mtext, "win");
+          msgsnd(g->player2->msqid, &sbuf, MAXDATASIZE, IPC_NOWAIT);
+          kill(g->player2->pid, SIGUSR1);
+          sbuf.mtype = LOSE_END_GAME;
+          sprintf(sbuf.mtext, "los");
+          msgsnd(g->player2->msqid, &sbuf, MAXDATASIZE, IPC_NOWAIT);
+          kill(g->player2->pid, SIGUSR1);
+          synchronized_game_w(g->id, g->player1_id, g->player2_id);
+        } else if (final == 2) {
+          sbuf.mtype = WIN_END_GAME;
+          sprintf(sbuf.mtext, "win");
+          msgsnd(g->player2->msqid, &sbuf, MAXDATASIZE, IPC_NOWAIT);
+          kill(g->player2->pid, SIGUSR1);
+          sbuf.mtype = LOSE_END_GAME;
+          sprintf(sbuf.mtext, "los");
+          msgsnd(g->player1->msqid, &sbuf, MAXDATASIZE, IPC_NOWAIT);
+          kill(g->player1->pid, SIGUSR1);
+          synchronized_game_w(g->id, g->player2_id, g->player1_id);
         }
       }
     }
@@ -524,6 +560,8 @@ void *manager() {
   while (!manager_join) {
     sleep(1);
     if (clients_available > 1 && games_curr <= GAMES) {
+      f = NULL;
+      s = NULL;
       game_id = rand() % 100;
       get_free_pair_msq(&msq, &f, &s, &msq_mutex);
       p = add_game(
@@ -542,8 +580,8 @@ void *manager() {
       kill(f->pid, SIGUSR1);
       msgsnd(s->msqid, &sbuf, MAXDATASIZE, IPC_NOWAIT);
       kill(s->pid, SIGUSR1);
-
-      sleep(1);
+      printf("Start!\n");
+      sleep(2);
       sbuf.mtype = FIELD_M;
       strcpy(sbuf.mtext, p->field);
       msgsnd(f->msqid, &sbuf, MAXDATASIZE, IPC_NOWAIT);
@@ -553,6 +591,7 @@ void *manager() {
       pthread_mutex_lock(&clients_av_mutex);
       clients_available -= 2;
       pthread_mutex_unlock(&clients_av_mutex);
+      sleep(1);
       // print_msq(&msq, &msq_mutex);
       synchronized_game(game_id);
     }

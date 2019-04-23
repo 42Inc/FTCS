@@ -29,6 +29,35 @@ double wtime() {
 int getrand(int min, int max) {
   return (double)rand() / (RAND_MAX + 1.0) * (max - min) + min;
 }
+int chkwin(char c, char *field) {
+  int checkwin = 0;
+  int ch = 3 * c;
+  checkwin = field[0] + field[1] + field[2];
+  if (checkwin == ch)
+    return 1;
+  checkwin = field[3] + field[4] + field[5];
+  if (checkwin == ch)
+    return 1;
+  checkwin = field[6] + field[7] + field[8];
+  if (checkwin == ch)
+    return 1;
+  checkwin = field[0] + field[3] + field[6];
+  if (checkwin == ch)
+    return 1;
+  checkwin = field[1] + field[4] + field[7];
+  if (checkwin == ch)
+    return 1;
+  checkwin = field[2] + field[5] + field[8];
+  if (checkwin == ch)
+    return 1;
+  checkwin = field[0] + field[4] + field[8];
+  if (checkwin == ch)
+    return 1;
+  checkwin = field[2] + field[4] + field[6];
+  if (checkwin == ch)
+    return 1;
+  return 0;
+}
 /*---------------------------------------------------------------------------*/
 void msq_set_game(ipc_t **p, int game, pthread_mutex_t *mutex) {
   if (*p == NULL)
