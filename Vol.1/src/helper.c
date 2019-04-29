@@ -32,6 +32,12 @@ int getrand(int min, int max) {
 int chkwin(char c, char *field) {
   int checkwin = 0;
   int ch = 3 * c;
+  int i;
+  int flag = 0;
+  for (i = 0; i < 9; ++i) {
+    if (field[i] == 'A')
+      flag = 1;
+  }
   checkwin = field[0] + field[1] + field[2];
   if (checkwin == ch)
     return 1;
@@ -56,6 +62,8 @@ int chkwin(char c, char *field) {
   checkwin = field[2] + field[4] + field[6];
   if (checkwin == ch)
     return 1;
+  if (!flag)
+    return 2;
   return 0;
 }
 /*---------------------------------------------------------------------------*/

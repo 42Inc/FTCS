@@ -345,28 +345,37 @@ void sigusr1_handler(int s, siginfo_t *info, void *param) {
     case FIELD_M: {
       g = get_game_pid(&game_ch, pid, &games_mutex);
       cell = atoi(rbuf.mtext);
+      int res = 0;
       //      pthread_mutex_lock(&games_mutex);
       if (g != NULL) {
         if (g->player1->pid == pid) {
           if (g->field[cell] == 'A' && g->go == g->player1_id) {
             g->field[cell] = 'X';
             g->go = g->player2_id;
-            if (chkwin('X', g->field)) {
+            res = chkwin('X', g->field);
+            printf("!! --        %d               ---!\n", res);
+            if (res == 1) {
               final = 1;
-            } else {
+            } else if (res == 0) {
               final = 0;
               synchronized_game(g->id);
+            } else if (res == 2) {
+              final = 3;
             }
           }
         } else if (g->player2->pid == pid) {
           if (g->field[cell] == 'A' && g->go == g->player2_id) {
             g->field[cell] = 'O';
             g->go = g->player1_id;
-            if (chkwin('O', g->field)) {
-              final = 2;
-            } else {
+            res = chkwin('O', g->field);
+            printf("!! --        %d               ---!\n", res);
+            if (res == 1) {
+              final = 1;
+            } else if (res == 0) {
               final = 0;
               synchronized_game(g->id);
+            } else if (res == 2) {
+              final = 3;
             }
           }
         }
@@ -396,6 +405,16 @@ void sigusr1_handler(int s, siginfo_t *info, void *param) {
         } else if (final == 2) {
           sbuf.mtype = WIN_END_GAME;
           sprintf(sbuf.mtext, "win");
+          msgsnd(g->player2->msqid, &sbuf, MAXDATASIZE, IPC_NOWAIT);
+          kill(g->player2->pid, SIGUSR1);
+          sbuf.mtype = LOSE_END_GAME;
+          sprintf(sbuf.mtext, "los");
+          msgsnd(g->player1->msqid, &sbuf, MAXDATASIZE, IPC_NOWAIT);
+          kill(g->player1->pid, SIGUSR1);
+          synchronized_game_w(g->id, g->player2_id, g->player1_id);
+        } else if (final == 3) {
+          sbuf.mtype = LOSE_END_GAME;
+          sprintf(sbuf.mtext, "los");
           msgsnd(g->player2->msqid, &sbuf, MAXDATASIZE, IPC_NOWAIT);
           kill(g->player2->pid, SIGUSR1);
           sbuf.mtype = LOSE_END_GAME;
