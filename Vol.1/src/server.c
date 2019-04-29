@@ -395,8 +395,8 @@ void sigusr1_handler(int s, siginfo_t *info, void *param) {
         if (final == 1) {
           sbuf.mtype = WIN_END_GAME;
           sprintf(sbuf.mtext, "win");
-          msgsnd(g->player2->msqid, &sbuf, MAXDATASIZE, IPC_NOWAIT);
-          kill(g->player2->pid, SIGUSR1);
+          msgsnd(g->player1->msqid, &sbuf, MAXDATASIZE, IPC_NOWAIT);
+          kill(g->player1->pid, SIGUSR1);
           sbuf.mtype = LOSE_END_GAME;
           sprintf(sbuf.mtext, "los");
           msgsnd(g->player2->msqid, &sbuf, MAXDATASIZE, IPC_NOWAIT);
