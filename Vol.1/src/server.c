@@ -370,7 +370,7 @@ void sigusr1_handler(int s, siginfo_t *info, void *param) {
             res = chkwin('O', g->field);
             printf("!! --        %d               ---!\n", res);
             if (res == 1) {
-              final = 1;
+              final = 2;
             } else if (res == 0) {
               final = 0;
               synchronized_game(g->id);

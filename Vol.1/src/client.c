@@ -124,7 +124,7 @@ void *client_writer() {
 void printInt() {
   int i = 0;
   mt_clrscr();
-  //Place grphonium locgic here
+  // Place grphonium locgic here
   for (i = 0; i < 9; i++) {
     if (i == cursor_y * 3 + cursor_x) {
       mt_setbgcolor(clr_blue);
@@ -372,31 +372,31 @@ int main(int argc, char **argv) {
                   p.buffer,
                   p.type);
           if (p.type == SERVICE) {
-            //Place graphonium change logic here
+            // Place graphonium change logic here
             if (!strcmp(p.buffer, "set_id")) {
               client_id = p.client_id;
               //              mt_gotoXY(1, 8);
               fprintf(stderr, "Change client id [id: %d]\n", client_id);
             } else if (!strcmp(p.buffer, "winner")) {
               //              mt_gotoXY(1, 8);
-              //Place graphonium change logic here
+              // Place graphonium change logic here
               fprintf(stdout, "You win!:)\n");
               game_state = FALSE;
               state_connection = FALSE;
               break;
             } else if (!strcmp(p.buffer, "looser")) {
               //              mt_gotoXY(1, 8);
-              //Place graphonium change logic here
+              // Place graphonium change logic here
               fprintf(stdout, "You Lose!:(\n");
               game_state = FALSE;
               state_connection = FALSE;
               break;
             }
           } else if (p.type == CHANGE_FIELD) {
-            //Place graphonium change logic here
+            // Place graphonium change logic here
             strcpy(field, p.buffer);
           } else if (p.type == MSG) {
-            //Place graphonium change logic here
+            // Place graphonium change logic here
             fprintf(stdout, "Msg: %s\n", p.buffer);
           }
           refresh = TRUE;
