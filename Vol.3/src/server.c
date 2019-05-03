@@ -22,7 +22,7 @@
 #define BACKLOG 10
 #define MAXDATASIZE 100
 #define MSG_LEN 64
-#define SERV_CNT 2
+#define SERV_CNT 3
 
 struct server_addr {
   char ip[16];
@@ -43,9 +43,9 @@ int main_server = 0;
 struct lroot *root;
 struct glroot *groot;
 pthread_mutex_t mtx;
-struct server_addr servers[3] = {{"127.0.0.1", "3490", "3489"},
-                                 {"127.0.0.1", "3491", "3488"},
-                                 {"127.0.0.1", "3492", "3487"}};
+struct server_addr servers[3] = {{"127.0.0.1", "65500", "65501"},
+                                 {"127.0.0.1", "65502", "65503"},
+                                 {"127.0.0.1", "65504", "65505"}};
 FILE *logfd;
 
 int check_field() {
@@ -685,8 +685,9 @@ int main(int argc, char *argv[]) {
 
   if (argc != 6) {
     fprintf(stderr,
-            "usage: server <1/0> <IP> <PORT> <CHECK_PORT> <LOG_NAME>\n");
-    return 1;
+            "\033[1;93m[WARNING]\033[1;97m Usage: ./bin/cmpl_srv <1/0> <IP> "
+            "\033[1;97m<PORT> <CHECK_PORT> <LOG_NAME>\033[0m\n");
+    exit(1);
   }
 
   if (strcmp(argv[1], "1") == 0) {
@@ -703,7 +704,9 @@ int main(int argc, char *argv[]) {
 
   logfd = fopen(real_log_path, "a");
   if (logfd == NULL) {
-    printf("server: cannot create/open file file\n");
+    printf("\033[1;91m[ERROR]\033[1;97m Can not create/open file <%s>\033[0m\n",
+           argv[5]);
+    exit(1);
   }
 
   memset(&hints, 0, sizeof hints);
