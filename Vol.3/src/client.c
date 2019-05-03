@@ -12,10 +12,10 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#define CHECK_PORT "3489"
+#define CHECK_PORT "65501"
 #define NAME_LEN 21
 #define MSG_LEN 64
-#define SERVER_COUNT 3
+#define SERVER_COUNT 4
 
 struct my_rows {
   char name[20];
@@ -31,9 +31,12 @@ typedef struct {
   GtkWidget *entry, *textview;
 } Widgets;
 
-struct server_addr servers[3] = {{"127.0.0.1", "65500", "65501"},
-                                 {"127.0.0.1", "65502", "65503"},
-                                 {"127.0.0.1", "65504", "65505"}};
+struct server_addr servers[4] = {
+        {"127.0.0.1", "65500", "65501"},
+        {"127.0.0.1", "65502", "65503"},
+        {"127.0.0.1", "65504", "65505"},
+        {"127.0.0.1", "65506", "65507"},
+};
 struct my_rows names[10];
 char side;
 int id, sockfd, chk_sockfd, numbytes, course,

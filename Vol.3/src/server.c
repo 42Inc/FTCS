@@ -17,8 +17,8 @@
 #include "../include/glist.h"
 #include "../include/llist.h"
 
-#define GAME_PORT "3490"
-#define CHECK_PORT "3489"
+#define GAME_PORT "65500"
+#define CHECK_PORT "65501"
 #define BACKLOG 10
 #define MAXDATASIZE 100
 #define MSG_LEN 64
