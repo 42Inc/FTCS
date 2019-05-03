@@ -5,6 +5,7 @@ CFLAGS = -g3 -O0 -Wall
 LIB = -lm -lncursesw -lpthread
 
 SRC_DIR = src
+INC_DIR = include
 OBJ_DIR = obj
 BIN_DIR = bin
 INCLUDES = -I $(SRC_DIR)
@@ -14,7 +15,11 @@ OBJ_SRV = $(OBJ_DIR)/server.o $(OBJ_DIR)/servers.o $(OBJ_DIR)/game.o $(OBJ_DIR)/
 
 .PHONY: all cli srv obj_cli obj_srv clean rebuild
 
-all: $(DIRS) cli srv
+all: $(DIRS) clang cli srv
+
+clang:
+	clang-format -i $(INC_DIR)/*.h
+	clang-format -i $(SRC_DIR)/*.c
 
 cli: obj_cli
 	$(CC) $(OBJ_CLI) $(CFLAGS) -o $(BIN_DIR)/cmpl_cli $(LIB)

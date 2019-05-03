@@ -1,6 +1,6 @@
 #include <ncurses.h>
-#include <termios.h>
 #include <string.h>
+#include <termios.h>
 
 #include "inet.h"
 
@@ -18,43 +18,43 @@
 
 #define DSM '#'
 
-#define GTL 1   //to left
-#define GTU 2   //to up
-#define GTR 3   //to right
-#define GTD 4   //to down
-#define GTM 5   //to middle
+#define GTL 1 // to left
+#define GTU 2 // to up
+#define GTR 3 // to right
+#define GTD 4 // to down
+#define GTM 5 // to middle
 
 #define CHAT_OUT_BUFF_SIZE 256
 
 #define Symbol struct game_simbol
 
 Symbol {
-        unsigned int up;
-        unsigned int down;
+  unsigned int up;
+  unsigned int down;
 };
 
 #define BoardW struct game_board_window
 
 BoardW {
-        WINDOW *bord;
-        WINDOW *cell[9];
-        WINDOW *butns[9];
-        WINDOW *label_up;
-        WINDOW *label_down;
-        unsigned int coord;
-        unsigned char blink_f;
+  WINDOW *bord;
+  WINDOW *cell[9];
+  WINDOW *butns[9];
+  WINDOW *label_up;
+  WINDOW *label_down;
+  unsigned int coord;
+  unsigned char blink_f;
 };
 
 #define ChatW struct game_chat_window
 
 ChatW {
-        WINDOW *bord;
-        WINDOW *out;
-        WINDOW *inp;
-        WINDOW *line;
-        char out_buff[CHAT_OUT_BUFF_SIZE];
-        char inp_buff[CHAR_BUFF_SIZE];
-        unsigned int inp_pos;
+  WINDOW *bord;
+  WINDOW *out;
+  WINDOW *inp;
+  WINDOW *line;
+  char out_buff[CHAT_OUT_BUFF_SIZE];
+  char inp_buff[CHAR_BUFF_SIZE];
+  unsigned int inp_pos;
 };
 
 void init_BoardW(BoardW *bw);
