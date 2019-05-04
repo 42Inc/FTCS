@@ -138,6 +138,45 @@ void send_to_reserve(int *active_srv, char *message) {
   }
 }
 
+int chk_state(int *active_srv, int cmd) {
+  int sock, i = 3;
+  socklen_t addr_len;
+  fprintf(stderr, "connect to server %s:%u\n", servers[i].ip, servers[i].port);
+
+  sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  if (sock <= 0) {
+    fprintf(stderr, "open socket\n");
+    return -1;
+  }
+
+  if (inet_aton(servers[i].ip, &servers[i].port) == 0) {
+    fprintf(stderr, "set ip addres %s\n", servers[i].ip);
+    fprintf(stderr,
+            "connect to reserve server %s:%u\n",
+            servers[i].ip,
+            servers[i].port);
+    close(sock);
+    return -1;
+  } else {
+    addr_len = sizeof(struct server_addr);
+    if (connect(sock, (struct server_addr *)&servers[i].ip, addr_len) == 0) {
+      fprintf(stderr,
+              "connected to reserve server %s:%u\n",
+              servers[i].ip,
+              servers[i].port);
+    } else {
+      fprintf(stderr,
+              "connect to reserve server %s:%u\n",
+              servers[i].ip,
+              servers[i].port);
+      close(sock);
+      return -1;
+    }
+  }
+
+  return sock;
+}
+
 void game_process(int op1, int op1_chk, int op2, int op2_chk, int *active_srv) {
   int fdmax, fdmax_chk, command, amnt, i, j, ij, chk;
   char message[MSG_LEN];
@@ -704,7 +743,8 @@ int main(int argc, char *argv[]) {
 
   logfd = fopen(real_log_path, "a");
   if (logfd == NULL) {
-    printf("\033[1;91m[ERROR]\033[1;97m Can not create/open file <%s>\033[0m\n",
+    printf("\033[1;91m[ERROR]\033[1;97m Can not create/open file "
+           "<%s>\033[0m\n",
            argv[5]);
     exit(1);
   }

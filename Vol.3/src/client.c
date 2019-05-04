@@ -120,7 +120,7 @@ static void insert_entry_text(GtkButton *button, Widgets *w) {
   strcpy(message_send + 4, text);
   message_send[63] = '\0';
 
-  sprintf(fulltext, "Вы: %s", message_send + 4);
+  sprintf(fulltext, "You: %s", message_send + 4);
   fulltext[69] = '\0';
 
   if (send(sockfd, message_send, MSG_LEN, 0) == -1) {
